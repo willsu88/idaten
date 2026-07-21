@@ -324,7 +324,10 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
         {detail.rpe == null && detail.garmin_rpe != null ? (
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle>Effort</CardTitle>
+              <CardTitle className="flex items-center gap-0.5">
+                Effort
+                <MetricInfo id="rpe" />
+              </CardTitle>
               <CardDescription>Logged on your watch</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-wrap items-center gap-2">

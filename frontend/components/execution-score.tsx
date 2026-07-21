@@ -4,6 +4,7 @@ import * as React from "react";
 import { Check } from "lucide-react";
 import type { Activity, ExecutionSegment } from "@/lib/types";
 import { CoachNote } from "@/components/coach-note";
+import { MetricInfo } from "@/components/metric-info";
 import { personaForStyle } from "@/components/coach-provider";
 import { cn } from "@/lib/utils";
 
@@ -97,7 +98,10 @@ export function ScoreBadge({
     <div className="flex items-center gap-2.5">
       <ScoreRing score={score} size={size} />
       <div className="text-xs text-muted-foreground">
-        <div className="font-medium text-foreground">Execution</div>
+        <div className="flex items-center gap-0.5 font-medium text-foreground">
+          Execution
+          <MetricInfo id="execution" />
+        </div>
         <div>{source === "garmin" ? "scored by your watch" : "scored by Idaten"}</div>
       </div>
     </div>

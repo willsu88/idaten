@@ -3,6 +3,7 @@
 import * as React from "react";
 import type { Activity } from "@/lib/types";
 import { api } from "@/lib/api";
+import { MetricInfo } from "@/components/metric-info";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
@@ -54,6 +55,9 @@ export function RpeScale({
 
   return (
     <div>
+      <div className="mb-2 flex justify-end">
+        <MetricInfo id="rpe" label="What's RPE?" />
+      </div>
       <div className="flex flex-wrap gap-1.5">
         {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
           <button

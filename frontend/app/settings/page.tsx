@@ -6,6 +6,7 @@ import { api, safe } from "@/lib/api";
 import { AccountCard } from "@/components/account-card";
 import { ConnectGarminCard } from "@/components/connect-garmin-card";
 import { CycleTrackingCard } from "@/components/cycle-tracking-card";
+import { MetricInfo } from "@/components/metric-info";
 import { NigglesSettingsCard } from "@/components/niggle-card";
 import { PageHeader } from "@/components/page-header";
 import { PERSONAS, PersonaCard } from "@/components/persona-card";
@@ -18,10 +19,21 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  info,
+  children,
+}: {
+  label: string;
+  info?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-sm font-medium">{label}</span>
+      <span className="mb-1.5 flex items-center gap-0.5 text-sm font-medium">
+        {label}
+        {info}
+      </span>
       {children}
     </label>
   );
@@ -310,7 +322,7 @@ export default function SettingsPage() {
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <Field label="Training mode">
+                <Field label="Training mode" info={<MetricInfo id="training_mode" />}>
                   <Select
                     value={settings.training_mode}
                     onChange={(e) =>
@@ -327,7 +339,7 @@ export default function SettingsPage() {
                 </p>
               </div>
               <div>
-                <Field label="Plan source">
+                <Field label="Plan source" info={<MetricInfo id="plan_source" />}>
                   <Select
                     value={settings.plan_authoring}
                     onChange={(e) =>

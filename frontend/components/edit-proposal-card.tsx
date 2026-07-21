@@ -170,6 +170,11 @@ export function EditProposalCard({
       </CardHeader>
       <CardContent>
         <EditDiff edit={edit} />
+        {!resolved && (
+          <p className="mt-3 text-xs text-muted-foreground">
+            Nothing changes until you accept - this is only a proposal.
+          </p>
+        )}
       </CardContent>
       <CardFooter>
         {resolved ? (

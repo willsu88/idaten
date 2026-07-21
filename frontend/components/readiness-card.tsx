@@ -99,21 +99,19 @@ export function ReadinessCard({ readiness }: { readiness: Readiness | null }) {
       <CardContent className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center">
         <div className="flex items-center gap-5">
           <ReadinessRing readiness={readiness} />
-          <div className="sm:hidden">
+          <div className="flex items-center gap-1 sm:hidden">
             <span className={cn("rounded-full px-3 py-1 text-sm font-medium", styles.bg, styles.text)}>
               {styles.label}
             </span>
+            <MetricInfo id="readiness" />
           </div>
         </div>
         <div className="flex-1">
-          <span
-            className={cn(
-              "hidden rounded-full px-3 py-1 text-sm font-medium sm:inline-block",
-              styles.bg,
-              styles.text,
-            )}
-          >
-            {styles.label}
+          <span className="hidden items-center gap-1 sm:inline-flex">
+            <span className={cn("rounded-full px-3 py-1 text-sm font-medium", styles.bg, styles.text)}>
+              {styles.label}
+            </span>
+            <MetricInfo id="readiness" />
           </span>
           <div className="mt-0 grid grid-cols-2 gap-2 sm:mt-4 lg:grid-cols-4">
             <StatTile

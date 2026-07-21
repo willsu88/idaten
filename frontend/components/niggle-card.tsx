@@ -4,6 +4,7 @@ import * as React from "react";
 import { Bandage } from "lucide-react";
 import type { Niggle } from "@/lib/types";
 import { api } from "@/lib/api";
+import { MetricInfo } from "@/components/metric-info";
 import { NiggleLogDialog } from "@/components/niggle-log-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -142,7 +143,10 @@ export function NiggleCard({
             <Bandage className="h-4 w-4" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold">Niggles</p>
+            <p className="flex items-center gap-0.5 text-sm font-semibold">
+              Niggles
+              <MetricInfo id="niggle" />
+            </p>
             <p className="mt-0.5 text-sm text-muted-foreground">
               Your coach is easing the plan around{" "}
               {niggles.length === 1 ? "it until it clears" : "these until they clear"}.
@@ -192,7 +196,10 @@ export function NigglesSettingsCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Niggles &amp; injuries</CardTitle>
+        <CardTitle className="flex items-center gap-0.5">
+          Niggles &amp; injuries
+          <MetricInfo id="niggle" />
+        </CardTitle>
         <CardDescription>
           Tell your coach when something hurts - in chat or here - and the plan eases around it
           until it clears

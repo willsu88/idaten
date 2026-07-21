@@ -13,7 +13,13 @@ export type MetricId =
   | "ef"
   | "hr_drift"
   | "vo2max"
-  | "easy_pct";
+  | "easy_pct"
+  | "readiness"
+  | "execution"
+  | "niggle"
+  | "rpe"
+  | "plan_source"
+  | "training_mode";
 
 /**
  * Coaching copy per metric — this exact wording is part of the product
@@ -55,6 +61,30 @@ const METRIC_COPY: Record<MetricId, { title: string; body: string }> = {
   vo2max: {
     title: "VO2max",
     body: "Garmin's estimate of your maximal oxygen uptake — the broadest single fitness number. How to use it: it moves slowly, so judge the 3-month trend and ignore daily wiggles. VO2max rising together with EF is strong evidence the training is working; a sustained drop during heavy training can be an early overtraining flag.",
+  },
+  readiness: {
+    title: "Readiness",
+    body: "Your body's recovery for today, 0-100. It blends overnight HRV against your own baseline, sleep hours and quality, Body Battery, and your training-load balance (TSB) into one number. Green (70+) means go - your body can take quality work; yellow (45-69) means ease off and keep it aerobic; red (under 45) means recover. Treat it as the day's starting point, not a verdict: how you actually feel still gets a vote.",
+  },
+  execution: {
+    title: "Execution score",
+    body: "How closely you ran the workout that was prescribed, 0-100, measured step by step against each segment's pace or HR target. Green (80+) means you hit the targets, amber (50-79) means you drifted off them, red (under 50) means the run was well off plan. A low score is not a bad run - it often just means the day called for something else, which is useful signal for the coach. Only runs matched to a plan day get scored.",
+  },
+  niggle: {
+    title: "Niggles",
+    body: "A niggle is a small ache or tweak - the early twinge before it becomes a real injury. Logging one tells the coach to ease the plan around it (shorter, easier, or swapped sessions) until you mark it resolved. Severity runs from niggle (minor, keep an eye on it) to pain (moderate, training is affected) to injury (serious, protect it). Report early: the whole point is to catch it while it is still just a niggle.",
+  },
+  rpe: {
+    title: "RPE (perceived effort)",
+    body: "Rate of Perceived Exertion - how hard the run felt to you, from 1 (easy jog) to 10 (all-out). It is your subjective read, and it is worth logging because it catches what the watch cannot: a run that felt awful at an easy heart rate is a fatigue flag, and an easy-feeling hard session means you are fit. The coach weighs your recent RPE alongside the objective data when planning.",
+  },
+  plan_source: {
+    title: "Plan source",
+    body: "Who writes your training plan. 'Follow my Garmin Coach plan' keeps Garmin's plan as the base and has Idaten review it, offering tweaks as proposals you approve - it never silently overwrites Garmin. 'Let Idaten write my whole plan' hands the full 7-day plan to Idaten instead - best if you have no Garmin Coach plan, or you want Idaten fully in charge.",
+  },
+  training_mode: {
+    title: "Training mode",
+    body: "How your workout targets are expressed. Pace gives every run a min/km target. Heart rate gives HR-band targets, which self-adjust for heat, hills, and fatigue. Hybrid (recommended) uses HR bands for easy and long runs - where holding the right effort matters more than speed - and pace for quality sessions where you are chasing a specific time.",
   },
 };
 
