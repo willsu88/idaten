@@ -3,8 +3,9 @@
 import * as React from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import type { Activity } from "@/lib/types";
+import type { Activity, GearSuggestion } from "@/lib/types";
 import { api, safe } from "@/lib/api";
+import { GearSuggestionBanner } from "@/components/gear-shoe-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScoreBadge } from "@/components/execution-score";
 import { CoachNote } from "@/components/coach-note";
@@ -21,6 +22,16 @@ export function ResultCard({ activity }: { activity: Activity }) {
   const [analysis, setAnalysis] = React.useState<string | null>(activity.execution_analysis);
   const [coach, setCoach] = React.useState<string | null>(activity.execution_analysis_coach);
   const [pending, setPending] = React.useState(false);
+  // Shoe-mistag catch at the moment it matters: this run just synced and the
+  // athlete is already here. Same suggestion state as /gear and the detail
+  // page — acting on it in any surface clears it everywhere.
+  const [gearSuggestion, setGearSuggestion] = React.useState<GearSuggestion | null>(null);
+
+  React.useEffect(() => {
+    safe(api.gearSuggestions()).then((all) =>
+      setGearSuggestion(all?.find((s) => s.activity_id === activity.id) ?? null),
+    );
+  }, [activity.id]);
 
   // Lazy, once: the Today load is the ONLY trigger for the analysis LLM call.
   React.useEffect(() => {
@@ -65,6 +76,16 @@ export function ResultCard({ activity }: { activity: Activity }) {
           </div>
           <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground group-hover:text-accent" />
         </Link>
+
+        {gearSuggestion && (
+          <div className="mt-4">
+            <GearSuggestionBanner
+              suggestion={gearSuggestion}
+              compact
+              onDone={() => setGearSuggestion(null)}
+            />
+          </div>
+        )}
 
         {activity.execution_score != null && (
           <div className="mt-4 border-t border-border pt-4">

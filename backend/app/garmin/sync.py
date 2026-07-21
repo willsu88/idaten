@@ -198,6 +198,17 @@ def run_sync(db: Session, user: User, lookback_days: int | None = None) -> str:
         db.rollback()
         log.warning("training plan sync failed for user %d: %s", user.id, e)
 
+    from .gear import sync_gear
+
+    try:
+        sync_gear(db, user.id, garmin)
+    except GarminConnectTooManyRequestsError:
+        db.rollback()
+        log.warning("gear sync rate-limited for user %d; will retry next sync", user.id)
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        log.warning("gear sync failed for user %d: %s", user.id, e)
+
     from .enrich import enrich_pending
 
     enriched = enrich_pending(db, user.id, garmin)

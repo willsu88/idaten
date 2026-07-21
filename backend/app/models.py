@@ -130,7 +130,40 @@ class Activity(Base):
     # at generation time so a rating freezes a reproducible eval case.
     execution_analysis_context: Mapped[Any] = mapped_column(JSON, nullable=True)
     execution_analysis_prompt_version: Mapped[str | None] = mapped_column(String)
+    # Shoe worn (Gear.uuid), mirrored from Garmin's gear-service at sync time and
+    # written back to Garmin when edited in-app. Only ever a Shoes-type gear —
+    # other gear types on the activity are left alone.
+    gear_uuid: Mapped[str | None] = mapped_column(String)
+    # True after the athlete rejects a shoe suggestion for this activity; the
+    # predictor never re-suggests on it.
+    gear_suggestion_dismissed: Mapped[bool | None] = mapped_column(Boolean)
     enriched: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class Gear(Base):
+    """Garmin gear (shoes, mainly), mirrored at sync time — see garmin/gear.py.
+
+    Totals come from Garmin's gear-service stats, so they cover the shoe's whole
+    life, not just our sync window. Photos are instance-local user uploads
+    (stored under config.gear_image_dir); the repo ships no imagery."""
+
+    __tablename__ = "gear"
+
+    uuid: Mapped[str] = mapped_column(String, primary_key=True)  # Garmin gear UUID
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    name: Mapped[str] = mapped_column(String, default="")  # customMakeModel / display name
+    make: Mapped[str] = mapped_column(String, default="")
+    model: Mapped[str] = mapped_column(String, default="")
+    gear_type: Mapped[str] = mapped_column(String, default="")   # "Shoes", "Bike", ...
+    status: Mapped[str] = mapped_column(String, default="active")  # active | retired
+    date_begin: Mapped[dt.date | None] = mapped_column(Date)
+    maximum_meters: Mapped[float | None] = mapped_column(Float)  # athlete's retire-at limit
+    total_distance_m: Mapped[float | None] = mapped_column(Float)
+    total_activities: Mapped[int | None] = mapped_column(Integer)
+    # Extension of the uploaded photo ("jpg"|"png"|"webp"); null = no photo,
+    # the frontend renders its generated card instead.
+    image_ext: Mapped[str | None] = mapped_column(String)
+    synced_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class DailyHealth(Base):

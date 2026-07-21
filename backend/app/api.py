@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -45,6 +46,7 @@ from .models import (
     DailyHealth,
     DailyReview,
     DayIntent,
+    Gear,
     LlmUsage,
     PendingEdit,
     PlanDay,
@@ -322,6 +324,7 @@ def _activity_dict(a: Activity) -> dict:
         "execution_breakdown": a.execution_breakdown,
         "execution_analysis": a.execution_analysis,
         "execution_analysis_coach": a.execution_analysis_coach,  # persona that wrote it
+        "gear_uuid": a.gear_uuid,
     }
 
 
@@ -1132,6 +1135,156 @@ def activity_analysis(activity_id: int, db: Session = Depends(get_db),
         db.commit()
     return {"analysis": a.execution_analysis,
             "coach": a.execution_analysis_coach}
+
+
+# --- gear --------------------------------------------------------------------
+
+GEAR_IMAGE_TYPES = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
+GEAR_IMAGE_MAX_BYTES = 5 * 1024 * 1024
+
+
+def _own_gear(db: Session, user_id: int, gear_uuid: str) -> Gear:
+    g = db.get(Gear, gear_uuid)
+    if g is None or g.user_id != user_id:
+        raise HTTPException(404, "gear not found")
+    return g
+
+
+def _gear_image_path(user_id: int, gear_uuid: str, ext: str) -> str:
+    return os.path.join(config.gear_image_dir, str(user_id), f"{gear_uuid}.{ext}")
+
+
+def _gear_dict(g: Gear) -> dict:
+    return {
+        "uuid": g.uuid,
+        "name": g.name,
+        "make": g.make,
+        "model": g.model,
+        "gear_type": g.gear_type,
+        "status": g.status,
+        "date_begin": g.date_begin.isoformat() if g.date_begin else None,
+        "distance_km": round(g.total_distance_m / 1000, 1) if g.total_distance_m else 0,
+        "limit_km": round(g.maximum_meters / 1000) if g.maximum_meters else None,
+        "total_activities": g.total_activities or 0,
+        "has_image": g.image_ext is not None,
+    }
+
+
+@router.get("/gear")
+def gear_list(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    rows = db.scalars(
+        select(Gear).where(Gear.user_id == user.id)
+        .order_by(Gear.status, Gear.date_begin.desc())
+    ).all()
+    return [_gear_dict(g) for g in rows]
+
+
+@router.post("/gear/refresh")
+def gear_refresh(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """On-demand mirror refresh (first visit / pull-to-refresh); the daily sync
+    keeps it fresh otherwise."""
+    from .garmin.gear import sync_gear
+
+    try:
+        sync_gear(db, user.id, get_garmin(user))
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        raise HTTPException(502, f"Garmin gear sync failed: {e}")
+    return gear_list(db, user)
+
+
+@router.get("/gear/suggestions")
+def gear_suggestion_list(db: Session = Depends(get_db),
+                         user: User = Depends(current_user)):
+    from .garmin.gear import gear_suggestions
+
+    return gear_suggestions(db, user.id)
+
+
+class GearBody(BaseModel):
+    gear_uuid: str | None  # null = remove the shoe from the activity
+
+
+@router.put("/activities/{activity_id}/gear")
+def set_gear(activity_id: int, body: GearBody, db: Session = Depends(get_db),
+             user: User = Depends(current_user)):
+    """Swap the shoe on an activity — writes through to Garmin, then mirrors."""
+    from .garmin.gear import set_activity_gear
+
+    a = _own_activity(db, user.id, activity_id)
+    if body.gear_uuid is not None:
+        g = _own_gear(db, user.id, body.gear_uuid)
+        if g.gear_type != "Shoes":
+            raise HTTPException(422, "only shoes can be assigned to a run")
+    try:
+        set_activity_gear(db, get_garmin(user), a, body.gear_uuid)
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        raise HTTPException(502, f"Garmin gear update failed: {e}")
+    return {"ok": True, "gear_uuid": a.gear_uuid}
+
+
+@router.post("/activities/{activity_id}/gear/dismiss")
+def dismiss_gear_suggestion(activity_id: int, db: Session = Depends(get_db),
+                            user: User = Depends(current_user)):
+    a = _own_activity(db, user.id, activity_id)
+    a.gear_suggestion_dismissed = True
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/gear/{gear_uuid}/image")
+async def upload_gear_image(gear_uuid: str, file: UploadFile = File(...),
+                            db: Session = Depends(get_db),
+                            user: User = Depends(current_user)):
+    """Instance-local shoe photo; replaces any existing one."""
+    g = _own_gear(db, user.id, gear_uuid)
+    ext = GEAR_IMAGE_TYPES.get(file.content_type or "")
+    if ext is None:
+        raise HTTPException(422, "image must be JPEG, PNG or WebP")
+    data = await file.read()
+    if len(data) > GEAR_IMAGE_MAX_BYTES:
+        raise HTTPException(422, "image too large (max 5 MB)")
+
+    path = _gear_image_path(user.id, gear_uuid, ext)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if g.image_ext and g.image_ext != ext:
+        old = _gear_image_path(user.id, gear_uuid, g.image_ext)
+        if os.path.exists(old):
+            os.remove(old)
+    with open(path, "wb") as f:
+        f.write(data)
+    g.image_ext = ext
+    db.commit()
+    return _gear_dict(g)
+
+
+@router.get("/gear/{gear_uuid}/image")
+def gear_image(gear_uuid: str, db: Session = Depends(get_db),
+               user: User = Depends(current_user)):
+    g = _own_gear(db, user.id, gear_uuid)
+    if not g.image_ext:
+        raise HTTPException(404, "no image uploaded")
+    path = _gear_image_path(user.id, gear_uuid, g.image_ext)
+    if not os.path.exists(path):
+        raise HTTPException(404, "no image uploaded")
+    media = {v: k for k, v in GEAR_IMAGE_TYPES.items()}[g.image_ext]
+    return FileResponse(path, media_type=media)
+
+
+@router.delete("/gear/{gear_uuid}/image")
+def delete_gear_image(gear_uuid: str, db: Session = Depends(get_db),
+                      user: User = Depends(current_user)):
+    g = _own_gear(db, user.id, gear_uuid)
+    if g.image_ext:
+        path = _gear_image_path(user.id, gear_uuid, g.image_ext)
+        if os.path.exists(path):
+            os.remove(path)
+        g.image_ext = None
+        db.commit()
+    return _gear_dict(g)
 
 
 # --- analytics -----------------------------------------------------------------

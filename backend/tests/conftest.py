@@ -12,6 +12,7 @@ import tempfile
 _tmp = tempfile.mkdtemp(prefix="garmin_bot_test_")
 os.environ["DB_PATH"] = os.path.join(_tmp, "test.db")
 os.environ["GARMIN_TOKEN_DIR"] = os.path.join(_tmp, "tokens")
+os.environ["GEAR_IMAGE_DIR"] = os.path.join(_tmp, "gear_images")
 # TestClient talks plain HTTP; a Secure cookie would not flow back, breaking every
 # authed test. Production defaults to secure=True (HTTPS behind the tunnel).
 os.environ["COOKIE_SECURE"] = "false"

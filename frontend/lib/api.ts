@@ -17,6 +17,8 @@ import type {
   FeedbackState,
   FeedbackSummary,
   FeedbackSurface,
+  GearItem,
+  GearSuggestion,
   HrZones,
   InviteLink,
   InviteStatus,
@@ -279,6 +281,44 @@ export const api = {
       `/api/activities/${id}/attribution`,
       { method: "POST", body: JSON.stringify({ attempted }) },
     ),
+
+  // --- gear (shoes) ---
+  gear: () => request<GearItem[]>("/api/gear"),
+
+  // On-demand Garmin mirror refresh (first visit / manual refresh; can take a
+  // few seconds — one Garmin call per shoe).
+  gearRefresh: () => request<GearItem[]>("/api/gear/refresh", { method: "POST" }),
+
+  gearSuggestions: () => request<GearSuggestion[]>("/api/gear/suggestions"),
+
+  // Swaps the shoe on Garmin itself (null = remove the shoe from the run).
+  setActivityGear: (id: number, gear_uuid: string | null) =>
+    request<{ ok: true; gear_uuid: string | null }>(`/api/activities/${id}/gear`, {
+      method: "PUT",
+      body: JSON.stringify({ gear_uuid }),
+    }),
+
+  dismissGearSuggestion: (id: number) =>
+    request<{ ok: true }>(`/api/activities/${id}/gear/dismiss`, { method: "POST" }),
+
+  // multipart — bypasses request() so the browser sets the boundary header
+  uploadGearImage: async (uuid: string, file: File): Promise<GearItem> => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`/api/gear/${uuid}/image`, {
+      method: "POST",
+      body: form,
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      if (res.status === 401) redirectToLogin();
+      throw new ApiError(res.status, await errorMessage(res));
+    }
+    return (await res.json()) as GearItem;
+  },
+
+  deleteGearImage: (uuid: string) =>
+    request<GearItem>(`/api/gear/${uuid}/image`, { method: "DELETE" }),
 
   races: (includePast = false) =>
     request<Race[]>(`/api/races${includePast ? "?include_past=true" : ""}`),

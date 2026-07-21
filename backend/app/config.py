@@ -34,6 +34,8 @@ class Config(BaseSettings):
     garmin_email: str = ""
     garmin_password: str = ""
     garmin_token_dir: str = "/data/garmin_tokens"
+    # Instance-local shoe photos uploaded by the athlete (the repo ships none)
+    gear_image_dir: str = "/data/gear_images"
 
     # First user bootstrapped at startup when the users table is empty
     initial_username: str = "will"

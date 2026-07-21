@@ -130,6 +130,35 @@ export interface Activity {
   // My thumb on the analysis; present where the analysis is rendered
   // (Today's completed_workout and the activity detail).
   analysis_feedback?: FeedbackState;
+  // Shoe worn (Garmin gear UUID); join against GET /api/gear for the name.
+  gear_uuid: string | null;
+}
+
+// --- gear (v1.29) — shoes: mileage, per-activity editing, suggestions ---
+
+export interface GearItem {
+  uuid: string;
+  name: string; // "New Balance 1080v14"
+  make: string;
+  model: string;
+  gear_type: string; // "Shoes" | "Bike" | ... (UI focuses on Shoes)
+  status: string; // "active" | "retired"
+  date_begin: string | null; // ISO date the shoe entered service
+  distance_km: number; // lifetime mileage from Garmin's gear stats
+  limit_km: number | null; // athlete's retire-at threshold, if set in Garmin
+  total_activities: number;
+  has_image: boolean; // photo uploaded to this instance
+}
+
+export interface GearSuggestion {
+  activity_id: number;
+  date: string;
+  activity_name: string;
+  bucket: string; // "plan:tempo" | "pace:easy" | ... (why we think so)
+  current: { uuid: string | null; name: string | null };
+  suggested: { uuid: string; name: string };
+  confidence: number; // 0-1 share of the bucket's history agreeing
+  sample_size: number; // runs in the bucket
 }
 
 // --- coach-quality feedback (v1.23) — thumbs on coach output ---

@@ -12,6 +12,7 @@ import {
   ActivitySeriesSection,
   useActivitySeries,
 } from "@/components/activity-series";
+import { GearSelectorCard } from "@/components/gear-selector";
 import { MetricInfo } from "@/components/metric-info";
 import { ZONE_COLORS } from "@/components/analytics-charts";
 import { RpeScale } from "@/components/rpe-card";
@@ -359,6 +360,14 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
               />
             </CardContent>
           </Card>
+        )}
+
+        {detail.type.includes("running") && (
+          <GearSelectorCard
+            activityId={detail.id}
+            gearUuid={detail.gear_uuid}
+            onChanged={(uuid) => setDetail((d) => (d ? { ...d, gear_uuid: uuid } : d))}
+          />
         )}
 
         {detail.plan_day && (

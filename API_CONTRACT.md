@@ -1490,3 +1490,61 @@ No wire-shape change - render-only. Extends the shared `MetricInfo` popover (see
 - **Phase 2 (jargon + trust):** first-encounter ⓘ tooltips for **Niggles** (`NiggleCard` + `NigglesSettingsCard`), **RPE** (`RpeScale` + the read-only Effort card on activity detail), **Plan source** and **Training mode** (Settings; `Field` gained an optional `info` slot). `EditProposalCard` now shows a quiet "Nothing changes until you accept - this is only a proposal." line while the proposal is pending, reinforcing the approval model at the decision point (the welcome wizard's mini-map already states it once during onboarding).
 
 Rationale: the app already had solid *activation* onboarding (the `/welcome` wizard, `GettingStartedCard`, `CoachHint`), but no *comprehension* layer - the Today dashboard led with undefined numbers. This reuses the one teaching pattern already proven on Trends rather than adding a tutorial or FAQ page.
+
+## v1.29 - gear (shoes): mileage, per-activity editing, one-tap suggestions
+
+Backend mirrors Garmin's gear-service at sync time (list + per-shoe lifetime totals + which shoe each activity wore, bulk-labeled with one call per shoe).
+Editing writes through to Garmin (the same link/unlink endpoints the Connect web app uses), then updates the mirror.
+Shoe photos are instance-local uploads under the data dir; the repo ships no imagery - shoes without a photo render a generated card.
+
+### New type
+
+```ts
+interface GearItem {
+  uuid: string;              // Garmin gear UUID (stable id)
+  name: string;              // e.g. "New Balance 1080v14" (customMakeModel)
+  make: string;
+  model: string;
+  gear_type: string;         // "Shoes" | "Bike" | ... (UI focuses on Shoes)
+  status: string;            // "active" | "retired"
+  date_begin: string | null; // ISO date the shoe entered service
+  distance_km: number;       // lifetime mileage from Garmin's gear stats
+  limit_km: number | null;   // athlete's retire-at threshold, if set in Garmin
+  total_activities: number;
+  has_image: boolean;        // photo uploaded to this instance
+}
+
+interface GearSuggestion {
+  activity_id: number;
+  date: string;
+  activity_name: string;
+  bucket: string;            // "plan:tempo" | "pace:easy" | ... (why we think so)
+  current: { uuid: string | null; name: string | null };
+  suggested: { uuid: string; name: string };
+  confidence: number;        // 0-1 share of the bucket's history agreeing
+  sample_size: number;       // runs in the bucket
+}
+```
+
+### `Activity` / `ActivityDetail` gain
+
+```ts
+gear_uuid: string | null;    // shoe worn; join against GET /api/gear for the name
+```
+
+### New endpoints
+
+- `GET /api/gear` → `GearItem[]` (from the mirror; empty until the first sync or refresh)
+- `POST /api/gear/refresh` → `GearItem[]` - on-demand Garmin mirror refresh (first visit / manual refresh; 502 if Garmin is unreachable)
+- `GET /api/gear/suggestions` → `GearSuggestion[]` - recent runs (21 days) whose shoe disagrees with the athlete's own strong habit (≥5 samples, ≥70% agreement) for that workout bucket; dismissed ones never return
+- `PUT /api/activities/{id}/gear` body `{ gear_uuid: string | null }` → `{ ok: true, gear_uuid }` - swaps the shoe on Garmin (unlink other shoes, link the new one; null = remove), then mirrors; 502 if the Garmin write fails
+- `POST /api/activities/{id}/gear/dismiss` → `{ ok: true }` - reject the suggestion for this activity permanently
+- `POST /api/gear/{uuid}/image` multipart `file` (JPEG/PNG/WebP, ≤5 MB) → `GearItem` - upload/replace the shoe photo
+- `GET /api/gear/{uuid}/image` → the photo bytes (404 if none)
+- `DELETE /api/gear/{uuid}/image` → `GearItem`
+
+### UI
+
+- New `/gear` page: card per shoe - uploaded photo, or a generated card (brand accent color + wordmark initial + model name) - with lifetime km (progress toward `limit_km` when set), activity count, in-service date, photo upload/remove. Suggestions render as one-tap banners (Switch to X / Dismiss) at the top.
+- Activity detail gains a shoe row: current shoe with a dropdown of active shoes to reassign (writes through to Garmin), plus the suggestion banner when one exists for that activity.
+- Today's completed-workout card (`ResultCard`) shows the same one-tap banner when the shown run has an open suggestion - the mistag is caught at the moment the athlete is already looking. All three surfaces read the same suggestion state; acting on it in one clears it everywhere.

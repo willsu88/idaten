@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
+  Backpack,
   CalendarDays,
   Droplets,
   Flag,
@@ -30,6 +31,7 @@ const NAV = [
   { href: "/trends", label: "Trends", icon: TrendingUp },
   { href: "/races", label: "Races", icon: Flag },
   { href: "/activities", label: "Activities", icon: Footprints },
+  { href: "/gear", label: "Gear", icon: Backpack },
   { href: "/settings", label: "Settings", icon: Settings },
   // About is hidden from the nav for now (route + page kept, see app/about).
 ];
@@ -95,6 +97,7 @@ const PRIMARY_TABS = [
 const MORE_ITEMS = [
   { href: "/races", label: "Races", icon: Flag },
   { href: "/activities", label: "Activities", icon: Footprints },
+  { href: "/gear", label: "Gear", icon: Backpack },
   { href: "/settings", label: "Settings", icon: Settings },
   // About is hidden from the nav for now (route + page kept, see app/about).
 ] as const;
