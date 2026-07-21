@@ -2,6 +2,20 @@
 
 Syncs your Garmin data daily, keeps a rolling 7-day training plan toward your race adjusted for sleep / HRV / training load, pushes structured workouts to your watch, and lets you chat with a coach that can read your data and propose plan changes (with a diff you approve).
 
+## Screenshots
+
+Today view: readiness, today's workout with the coach's rationale, and a proposed plan change you can accept or dismiss.
+
+![Idaten dashboard](images/screenshot-dashboard.png)
+
+The coach is a tool-using agent - it reads your training data, checks the current plan, and proposes a concrete edit (shown as a per-day diff) that nothing acts on until you approve.
+
+![Chat with the coach proposing a plan change](images/screenshot-chat.png)
+
+Responsive, so it works on your phone too.
+
+<img src="images/screenshot-mobile.png" alt="Idaten on mobile" width="360">
+
 ## Architecture
 
 - **Backend** (`backend/`): FastAPI + SQLite + APScheduler.
