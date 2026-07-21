@@ -1,0 +1,31 @@
+# Explicit project name (the dir stays garmin-bot). NOTE: first deploy after this
+# change must `docker compose -p garmin-bot down` to free ports 8000/3000.
+name: idaten
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      DB_PATH: /data/garmin_bot.db
+      GARMIN_TOKEN_DIR: /data/garmin_tokens
+      # Household timezone — drives the daily job hour and all date logic.
+      TZ: Asia/Taipei
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        BACKEND_URL: http://backend:8000
+    ports:
+      - "3000:3000"
+    environment:
+      BACKEND_URL: http://backend:8000
+    depends_on:
+      - backend
+    restart: unless-stopped

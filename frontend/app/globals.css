@@ -1,0 +1,111 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 40 20% 97%;
+    --foreground: 220 15% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 15% 12%;
+    --muted: 220 12% 92%;
+    --muted-foreground: 220 8% 42%;
+    --border: 220 12% 88%;
+    --input: 220 12% 82%;
+    --ring: 16 85% 50%;
+    --accent: 16 85% 50%;
+    --accent-foreground: 0 0% 100%;
+    --success: 152 60% 34%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 40%;
+    --warning-foreground: 0 0% 100%;
+    --danger: 0 72% 46%;
+    --danger-foreground: 0 0% 100%;
+  }
+
+  .dark {
+    --background: 222 18% 8%;
+    --foreground: 220 12% 92%;
+    --card: 222 16% 11%;
+    --card-foreground: 220 12% 92%;
+    --muted: 222 12% 17%;
+    --muted-foreground: 220 8% 62%;
+    --border: 222 12% 19%;
+    --input: 222 12% 25%;
+    --ring: 18 90% 58%;
+    --accent: 18 90% 58%;
+    --accent-foreground: 222 20% 8%;
+    --success: 152 55% 48%;
+    --success-foreground: 222 20% 8%;
+    --warning: 40 95% 56%;
+    --warning-foreground: 222 20% 8%;
+    --danger: 0 80% 62%;
+    --danger-foreground: 222 20% 8%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+/* Markdown inside chat bubbles (assistant messages). */
+@layer components {
+  .chat-markdown > :first-child {
+    @apply mt-0;
+  }
+  .chat-markdown > :last-child {
+    @apply mb-0;
+  }
+  .chat-markdown p {
+    @apply my-2;
+  }
+  .chat-markdown h1,
+  .chat-markdown h2,
+  .chat-markdown h3,
+  .chat-markdown h4 {
+    @apply mb-1.5 mt-4 font-semibold;
+  }
+  .chat-markdown h1 {
+    @apply text-base;
+  }
+  .chat-markdown h2,
+  .chat-markdown h3,
+  .chat-markdown h4 {
+    @apply text-sm;
+  }
+  .chat-markdown ul {
+    @apply my-2 list-disc space-y-1 pl-5;
+  }
+  .chat-markdown ol {
+    @apply my-2 list-decimal space-y-1 pl-5;
+  }
+  .chat-markdown li > ul,
+  .chat-markdown li > ol {
+    @apply my-1;
+  }
+  .chat-markdown code {
+    @apply rounded bg-muted px-1 py-0.5 font-mono text-[0.85em];
+  }
+  .chat-markdown pre {
+    @apply my-2 overflow-x-auto rounded-lg bg-muted p-3;
+  }
+  .chat-markdown pre code {
+    @apply bg-transparent p-0;
+  }
+  .chat-markdown blockquote {
+    @apply my-2 border-l-2 border-border pl-3 text-muted-foreground;
+  }
+  .chat-markdown a {
+    @apply underline underline-offset-2 hover:text-accent;
+  }
+  .chat-markdown hr {
+    @apply my-3 border-border;
+  }
+  .chat-markdown strong {
+    @apply font-semibold;
+  }
+}

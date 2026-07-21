@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- The Idaten mark: the login card's pulse glyph (lucide Activity) on the
+       accent orange, rounded like the app's 2xl cards. Served by Next as the
+       favicon (app/icon.svg convention). -->
+  <rect width="512" height="512" rx="120" fill="#ec4d13"/>
+  <path d="M416 256h-64l-48 144-96-288-48 144H96"
+        fill="none" stroke="#ffffff" stroke-width="38"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
