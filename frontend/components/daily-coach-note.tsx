@@ -14,7 +14,7 @@
 import * as React from "react";
 import type { DailyReview } from "@/lib/types";
 import { api, safe } from "@/lib/api";
-import { useCoach } from "@/components/coach-provider";
+import { personaForStyle, useCoach } from "@/components/coach-provider";
 import { CoachNote } from "@/components/coach-note";
 import { Button } from "@/components/ui/button";
 
@@ -100,14 +100,29 @@ export function DailyCoachNote({ onProposal }: { onProposal?: () => void }) {
   };
 
   if (status === "loading") return null;
-  if (status === "done")
-    return note && review ? (
+  if (status === "done") {
+    if (!note || !review) return null;
+    // Attribution is frozen at generation time: the note renders as the coach
+    // who WROTE it, not the currently selected one. On the day of a coach
+    // switch a small ⓘ explains why yesterday's face is still here.
+    const author = review.coach ? personaForStyle(review.coach) : persona;
+    const switchedSince = author != null && persona != null && author.style !== persona.style;
+    return (
       <CoachNote
         note={note}
-        persona={persona}
+        persona={author}
+        info={
+          switchedSince
+            ? {
+                title: `A note from ${author.name}`,
+                body: `${author.name} wrote today's review before you switched coaches. Starting tomorrow, your daily review comes from ${persona.name}.`,
+              }
+            : undefined
+        }
         feedback={{ surface: "coach_note", ref: review.date, state: review.my_feedback ?? null }}
       />
-    ) : null;
+    );
+  }
 
   const coachName = persona?.name ?? "Coach";
 

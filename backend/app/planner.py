@@ -204,28 +204,86 @@ Structured workouts (the `steps` field) and variety:
 Return only data conforming to the schema.
 """
 
-# Tone-only presets appended to the planner and chat system prompts. Styles
+# Persona presets appended to the planner and chat system prompts. Personas
 # change the voice, never the decisions: recovery guardrails, taper rules, and
-# approval-gated edits apply identically in every style.
+# approval-gated edits apply identically in every persona. Names/portraits match
+# the frontend persona cards (frontend/components/persona-card.tsx).
+#
+# Each block is identity + hard voice rules + three short voice samples. The
+# samples are the load-bearing part: models imitate demonstrations far better
+# than adjective lists. Samples cover the three note archetypes (green-light
+# day, rest override, missed/sloppy session) so the persona survives contact
+# with each. Their workouts and numbers are fabricated and flagged as such so
+# they can't leak into real prescriptions.
 STYLE_PROMPTS = {
-    "default": "",
+    "default": (
+        "\nYou are Coach Sam: calm, balanced, data-fluent. You sound like an "
+        "experienced club coach who has seen every training mistake and stopped "
+        "being alarmed by them. Use a number only when that one number earns its "
+        "place, then say what it means for today; never recite the dashboard, "
+        "and never surface app-internal indices like TSB or ACWR. Be candid "
+        "about trade-offs and concrete about what happens next.\n"
+        "Voice samples - these show TONE ONLY; their workouts and numbers are "
+        "fake, never reuse either:\n"
+        "- \"Green light. HRV is back at baseline and you slept well, so run the "
+        "40 easy minutes as planned, around 145 bpm.\"\n"
+        "- \"I'm pulling today's threshold. HRV has sat below baseline two "
+        "mornings running and yesterday already felt harder than it should. One "
+        "easy day costs nothing; forcing this one costs the weekend long run.\"\n"
+        "- \"The last three quality sessions all lost their final rep. No drama, "
+        "but it's a pattern now. Start the next one a touch slower so you can "
+        "finish the set.\""
+    ),
     "chill": (
-        "\nCoaching style: relaxed and encouraging, like a friend who runs texting "
-        "you — for someone who doesn't know training science. NEVER put raw metric "
-        "values in the athlete-facing text: no HRV percentages, no TSB/ACWR/CTL/ATL "
-        "numbers, no readiness scores, no zone labels like 'z1'. Translate every "
-        "metric into how the body feels — 'you're recovered and fresh today' NOT "
-        "'readiness 82, HRV +10.9%'; 'still a little tiredness lingering from this "
-        "week' NOT 'TSB -6.6'. A heart-rate or pace target that IS the workout may "
-        "stay, phrased plainly (e.g. 'keep it easy, around 140-150 bpm'). Keep "
-        "rationales short, warm, and zero-lecture."
+        "\nYou are Coach Koa: relaxed, sunny, zero jargon, like a friend who "
+        "runs texting you. The athlete doesn't know training science, so NEVER "
+        "put raw metric values in the athlete-facing text: no HRV percentages, "
+        "no TSB/ACWR/CTL/ATL numbers, no readiness or execution scores, no "
+        "VO2max, no zone labels like 'z1', no acronyms like RPE. Translate every "
+        "metric into how the body feels: 'you're fresh and charged up today', "
+        "NOT 'readiness 82, HRV +10.9%'. A heart-rate or pace target that IS "
+        "the workout may stay, phrased plainly (e.g. 'nice and easy, around "
+        "140-150 bpm'). Say the workout the way a friend would ('your 50-minute "
+        "easy run', 'that speedy session Friday'), never with formal plan labels "
+        "or type names. Talk about today and tomorrow; the past comes up as a "
+        "feeling ('you've been cruising lately'), never as recited stats or "
+        "distances. Short, warm, zero lecture; celebrate small wins.\n"
+        "Voice samples - these show TONE ONLY; their workouts and numbers are "
+        "fake, never reuse either:\n"
+        "- \"You're all charged up today. Go enjoy those 40 easy minutes, "
+        "chatty pace, around 145 bpm.\"\n"
+        "- \"Your body's still working off the weekend, I can tell. Skip the "
+        "hard stuff today - lazy jog or full day off, your pick. The speedy "
+        "session will still be there Friday.\"\n"
+        "- \"Loved that run this morning. You kept it relaxed the whole way, "
+        "which is exactly the point. More of that.\""
     ),
     "strict": (
-        "\nCoaching style: strict and direct. Be blunt about skipped sessions "
-        "and inconsistent execution, hold the athlete accountable, no "
-        "sugarcoating. Stay respectful, and NEVER let strictness override the "
-        "recovery principles above — on red-flag days you firmly prescribe rest "
-        "and say exactly why."
+        "\nYou are Coach Viktoria: direct, exacting, allergic to excuses. Short "
+        "declarative sentences; say the uncomfortable part first; never cruel, "
+        "never insulting. Name skipped sessions and sloppy execution plainly and "
+        "attach the consequence. You give orders, not evidence: numbers in your "
+        "text are targets (minutes, bpm, pace), never justifications. You have "
+        "read the data and decided - state the call with authority instead of "
+        "walking through readiness scores, load indices, execution averages, or "
+        "prediction math. Name the cause in one short strike: qualitatively "
+        "('HRV is down', 'sleep was short') or at most one physiological number "
+        "(HRV, sleep hours, pace) - never a stack of metrics, and never an app "
+        "score like readiness or execution; those are the app's numbers, not "
+        "yours. Praise is rare, so it means something. "
+        "Strictness NEVER overrides the recovery principles above - on red-flag "
+        "days you firmly prescribe rest and say exactly why, because discipline "
+        "includes recovering on schedule.\n"
+        "Voice samples - these show TONE ONLY; their workouts and numbers are "
+        "fake, never reuse either:\n"
+        "- \"Recovery is good, so no excuses today. 40 minutes at 145 bpm, and "
+        "I want all 40, not 33.\"\n"
+        "- \"You're not running hard today. HRV is down and sleep was short. "
+        "Pretending otherwise is how one cheap day becomes a lost week. Rest is "
+        "the assignment - do it properly.\"\n"
+        "- \"You skipped Thursday's threshold. That's two quality sessions this "
+        "block. The plan only works if you run it, so tell me what got in the "
+        "way and we fix that first.\""
     ),
 }
 
@@ -238,7 +296,13 @@ _HOUSE_STYLE = (
     "some of it comes from Garmin in the athlete's device language, but your "
     "output must stay English.\n\n"
     "Write like a real coach texting, not an AI. NEVER use em-dashes (—); "
-    "use a plain hyphen, a comma, or two short sentences instead."
+    "use a plain hyphen, a comma, or two short sentences instead.\n\n"
+    "Vary your shape. A routine green-light day deserves two short sentences; "
+    "only a genuinely important day earns four or five. Never open with stock "
+    "phrases like 'Solid run', 'Today's plan is', or 'You look well recovered', "
+    "and don't fall into the same plan-caveat-reassurance arc in every note. "
+    "One idea can carry a whole message. Real coaches repeat themselves less "
+    "than you want to."
 )
 
 
@@ -525,6 +589,73 @@ def clean_llm_text(s: str | None) -> str | None:
         return s
     s = _UNICODE_ESCAPE.sub(lambda m: chr(int(m.group(1), 16)), s)
     return strip_em_dashes(s)
+
+
+# --- persona lint ----------------------------------------------------------------
+# Deterministic checks behind the persona prompts (same belt-and-braces idea as
+# strip_em_dashes): the prompt asks, this verifies. Violations are logged in
+# production (every real note doubles as an eval sample) and hard-asserted in
+# the opt-in eval suite (tests/test_persona_evals.py). Detection only — a bad
+# rewrite would be worse than a logged miss, so nothing is auto-edited here.
+
+# Stock openers _HOUSE_STYLE bans; a uniform opening is the loudest AI tell.
+_STOCK_OPENERS = ("solid run", "today's plan is", "you look well recovered")
+
+# App-internal load indices. No human coach texts an athlete "TSB is -2.1",
+# whatever their persona — these are banned in athlete-facing text for everyone.
+_INDEX_JARGON = re.compile(r"\b(?:TSB|ACWR|CTL|ATL)\b")
+
+# Training-science vocabulary the chill persona (Koa) must translate away.
+# bpm and pace targets are deliberately NOT matched: a plainly-phrased workout
+# target is allowed by the persona rules.
+_CHILL_JARGON = re.compile(
+    r"\b(?:HRV|RPE|VO2\s?max)\b|\bz\s?[1-5]\b|\bzone\s+[1-5]\b",
+    re.IGNORECASE,
+)
+
+# Numeric dashboard citations ("readiness is green at 83", "score of 62").
+# Sam (default) is data-fluent and may cite one deliberately; Koa translates
+# metrics into body feel and Viktoria gives orders, not evidence — for both,
+# a score citation is dashboard-speak in a human voice.
+_SCORE_CITES = re.compile(
+    r"\breadiness(?:\s+score)?(?:\s+(?:of|is|was|at|sits))?"
+    r"(?:\s+(?:green|yellow|red))?(?:\s+at)?\s+\d+"
+    r"|\b(?:execution\s+)?score\s+(?:of|is|was|at)\s+\d+"
+    r"|\ban?\s+\d+(?:\.\d+)?\s+(?:execution\s+)?score\b"
+    r"|\bexecution\s+average\s+(?:of|is|was|at)\s+\d+",
+    re.IGNORECASE,
+)
+
+
+def persona_lint(style: str, text: str | None) -> list[str]:
+    """Mechanical persona-adherence violations in athlete-facing prose.
+    Empty list = clean. Only rules that regex can judge reliably live here;
+    tone is the LLM judge's job in the eval suite."""
+    if not text:
+        return []
+    out = []
+    for opener in _STOCK_OPENERS:
+        if text.lstrip().lower().startswith(opener):
+            out.append(f"stock opener {opener!r}")
+            break
+    if _EM_DASH.search(text):
+        out.append("em-dash in athlete-facing text")
+    for m in _INDEX_JARGON.finditer(text):
+        out.append(f"app-internal index in athlete-facing text: {m.group(0)!r}")
+    if style == "chill":
+        for m in _CHILL_JARGON.finditer(text):
+            out.append(f"raw metric/jargon in chill voice: {m.group(0)!r}")
+    if style in ("chill", "strict"):
+        for m in _SCORE_CITES.finditer(text):
+            out.append(f"dashboard score citation in {style} voice: {m.group(0)!r}")
+    return out
+
+
+def log_persona_lint(style: str | None, text: str | None, where: str) -> None:
+    """Production tap: warn on any lint violation so real notes accumulate as
+    persona-eval data without extra LLM calls."""
+    for v in persona_lint(style or "default", text):
+        log.warning("persona lint (%s, %s): %s", style or "default", where, v)
 
 
 def apply_plan_days(
@@ -1196,6 +1327,9 @@ def _evaluate_today_locked(
         return db.get(DailyReview, (user_id, today))
 
     state = "done_full" if data_ready else "done_structural"
+    # Stamp the authoring persona now (not at render time): a later coach
+    # switch must never re-attribute a note that another coach wrote.
+    review.coach = settings.get("coach_style") or "default"
 
     # Author mode has no Garmin base to review — Idaten writes the week itself
     # (one LLM call via generate_plan, auto-applied since it's the athlete's own
@@ -1214,7 +1348,8 @@ def _evaluate_today_locked(
             .order_by(PlanVersion.created_at.desc()).limit(1)
         ).first()
         review.coach_note = clean_llm_text(latest.summary) if latest and latest.summary else \
-            "You're on track — this week's plan looks good."
+            "You're on track - this week's plan looks good."
+        log_persona_lint(review.coach, review.coach_note, "daily_review_author")
         review.state = state
         review.proposal_id = None
         db.merge(review)
@@ -1254,6 +1389,7 @@ def _evaluate_today_locked(
     )
 
     review.coach_note = clean_llm_text(result.get("coach_note", ""))
+    log_persona_lint(review.coach, review.coach_note, "daily_review")
     # Freeze the producing inputs + prompt hash so a later rating on this note
     # is a reproducible eval case (COACH_QUALITY.md Stage 1).
     review.snapshot = snapshot
@@ -1387,4 +1523,6 @@ def write_execution_analysis(db: Session, a: Activity) -> tuple[str, str]:
     # so a later rating on this analysis is a reproducible eval case.
     a.execution_analysis_context = payload
     a.execution_analysis_prompt_version = feedback_mod.prompt_version(system)
-    return clean_llm_text(result.get("analysis", "")), coach
+    analysis = clean_llm_text(result.get("analysis", "")) or ""
+    log_persona_lint(coach, analysis, "execution_analysis")
+    return analysis, coach

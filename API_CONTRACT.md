@@ -888,6 +888,7 @@ interface DailyReview {
   state: "pending_data" | "done_full" | "done_structural";
   mode: "editor" | "author" | null;
   coach_note: string;         // persona-voiced daily message; "" until reviewed
+  coach: string | null;       // coach_style key that WROTE the note (see coach-attribution entry below); null on pre-feature rows
   proposal_id: number | null; // the PendingEdit this review raised, if any
 }
 ```
@@ -1548,3 +1549,14 @@ gear_uuid: string | null;    // shoe worn; join against GET /api/gear for the na
 - New `/gear` page: card per shoe - uploaded photo, or a generated card (brand accent color + wordmark initial + model name) - with lifetime km (progress toward `limit_km` when set), activity count, in-service date, photo upload/remove. Suggestions render as one-tap banners (Switch to X / Dismiss) at the top.
 - Activity detail gains a shoe row: current shoe with a dropdown of active shoes to reassign (writes through to Garmin), plus the suggestion banner when one exists for that activity.
 - Today's completed-workout card (`ResultCard`) shows the same one-tap banner when the shown run has an open suggestion - the mistag is caught at the moment the athlete is already looking. All three surfaces read the same suggestion state; acting on it in one clears it everywhere.
+
+## v1.30 - daily review coach attribution (frozen at write time)
+
+`DailyReview` gains `coach: string | null` - the `coach_style` key of the persona that WROTE today's note, stamped in `evaluate_today` at generation time (same contract as `execution_analysis_coach`, v1.21.1).
+A later coach switch never re-attributes an already-written note.
+`GET /api/dashboard/review` and `POST /api/dashboard/evaluate` include the field; it is null on `pending_data` rows and on rows that predate the feature (UI falls back to the current coach).
+
+UI: the Today review note renders avatar + name from this stamp, not the current selection.
+On the day of a switch (stamped coach differs from the current one) a small ⓘ next to the name explains: the old coach wrote this morning's note, and starting tomorrow the daily review comes from the new coach.
+The chat header keeps reflecting the CURRENT coach - attribution ("who said this") is frozen; presence ("who am I talking to") is live.
+Implemented via a generic `InfoTip` extracted from `MetricInfo` (same popover, dynamic copy) and an optional `info` prop on `CoachNote`.

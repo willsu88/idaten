@@ -396,6 +396,7 @@ export interface DailyReview {
   state: "pending_data" | "done_full" | "done_structural";
   mode: "editor" | "author" | null;
   coach_note: string;
+  coach: string | null; // coach_style key that wrote the note (null on pre-feature rows)
   proposal_id: number | null;
   my_feedback?: FeedbackState; // my thumb on today's note
 }

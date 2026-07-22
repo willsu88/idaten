@@ -89,22 +89,25 @@ const METRIC_COPY: Record<MetricId, { title: string; body: string }> = {
 };
 
 /**
- * Small ⓘ trigger with an explanation popover.
+ * Small ⓘ trigger with an explanation popover — the generic widget behind
+ * MetricInfo, exported for one-off explanations with dynamic copy (e.g. the
+ * coach-switch attribution note on the daily review).
  * Desktop: opens on hover. Touch: tap to toggle, tap outside (or Esc) to dismiss.
  */
-export function MetricInfo({
-  id,
+export function InfoTip({
+  title,
+  body,
   label,
   className,
 }: {
-  id: MetricId;
+  title: string;
+  body: string;
   label?: string;
   className?: string;
 }) {
   const [open, setOpen] = React.useState(false);
   const [align, setAlign] = React.useState<"left" | "center" | "right">("center");
   const rootRef = React.useRef<HTMLSpanElement>(null);
-  const copy = METRIC_COPY[id];
 
   React.useEffect(() => {
     if (!open) return;
@@ -139,7 +142,7 @@ export function MetricInfo({
     <span ref={rootRef} className={cn("relative inline-flex", className)}>
       <button
         type="button"
-        aria-label={`What is ${copy.title}?`}
+        aria-label={`What is ${title}?`}
         aria-expanded={open}
         onClick={() => (open ? setOpen(false) : show())}
         onPointerEnter={(e) => {
@@ -169,12 +172,26 @@ export function MetricInfo({
             align === "right" && "right-0",
           )}
         >
-          <span className="mb-1 block text-xs font-bold text-foreground">{copy.title}</span>
+          <span className="mb-1 block text-xs font-bold text-foreground">{title}</span>
           <span className="block text-xs font-normal leading-relaxed text-muted-foreground">
-            {copy.body}
+            {body}
           </span>
         </span>
       )}
     </span>
   );
+}
+
+/** InfoTip with the fixed coaching copy for a known metric. */
+export function MetricInfo({
+  id,
+  label,
+  className,
+}: {
+  id: MetricId;
+  label?: string;
+  className?: string;
+}) {
+  const copy = METRIC_COPY[id];
+  return <InfoTip title={copy.title} body={copy.body} label={label} className={className} />;
 }

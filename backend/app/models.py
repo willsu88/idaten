@@ -336,6 +336,10 @@ class DailyReview(Base):
     state: Mapped[str] = mapped_column(String, default="pending_data")
     mode: Mapped[str | None] = mapped_column(String)  # editor | author
     coach_note: Mapped[str] = mapped_column(Text, default="")
+    # The coach persona (coach_style key) that wrote the note, stamped at
+    # generation time so a later coach switch never rewrites who said it
+    # (same contract as Activity.execution_analysis_coach). Null on old rows.
+    coach: Mapped[str | None] = mapped_column(String)
     # The PendingEdit this review raised, if any (null = nothing proposed).
     proposal_id: Mapped[int | None] = mapped_column(ForeignKey("pending_edits.id"))
     # Provenance for the quality-feedback loop (COACH_QUALITY.md): the review

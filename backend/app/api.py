@@ -459,6 +459,7 @@ def _review_dict(r: DailyReview | None, db: Session | None = None,
         "state": r.state,
         "mode": r.mode,
         "coach_note": r.coach_note,
+        "coach": r.coach,  # persona that wrote the note (null on pre-feature rows)
         "proposal_id": r.proposal_id,
     }
     if db is not None and user_id is not None:

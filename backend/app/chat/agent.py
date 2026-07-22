@@ -196,7 +196,7 @@ def run_chat(db: Session, user: User, session_id: str | None, user_message: str,
     `stream_gen` is this stream's rate_limit generation token — cancel checks
     are scoped to it so a stale stop never kills a newer stream.
     """
-    from ..planner import strip_em_dashes
+    from ..planner import log_persona_lint, strip_em_dashes
 
     session_id = session_id or uuid.uuid4().hex
     yield {"type": "session", "session_id": session_id}
@@ -298,6 +298,7 @@ def run_chat(db: Session, user: User, session_id: str | None, user_message: str,
             log.warning("chat hit MAX_TOOL_ROUNDS for session %s", session_id)
 
         final = "\n\n".join(t.strip() for t in round_texts if t.strip())
+        log_persona_lint(settings.get("coach_style"), final, "chat")
         db.add(ChatMessage(user_id=user.id, session_id=session_id, role="assistant",
                            content=final))
         db.commit()

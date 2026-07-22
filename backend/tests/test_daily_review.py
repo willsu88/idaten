@@ -110,6 +110,7 @@ def test_pending_data_when_no_health_and_no_llm(db, user, monkeypatch):
     assert review.state == "pending_data"
     assert stub.calls == 0                 # never spends an LLM call on absent data
     assert review.coach_note == ""
+    assert review.coach is None            # no note yet — no author to stamp
 
 
 def test_structural_fallback_runs_without_health(db, user, monkeypatch):
@@ -119,6 +120,21 @@ def test_structural_fallback_runs_without_health(db, user, monkeypatch):
     review = evaluate_today(db, user.id, TODAY, allow_structural_fallback=True)
     assert review.state == "done_structural"
     assert stub.calls == 1
+    assert review.coach == "default"       # authoring persona frozen at write time
+
+
+def test_review_stamps_active_coach_persona(db, user, monkeypatch):
+    # The note is attributed to the coach selected WHEN it was written; a later
+    # coach switch must not re-attribute it (the UI renders from this stamp).
+    from app.settings_store import put_settings
+    put_settings(db, user.id, {"coach_style": "chill"})
+    stub = StubReviewLLM({"coach_note": "Nice and easy today.",
+                          "should_propose": False, "proposal": None})
+    _use_llm(monkeypatch, stub)
+    review = evaluate_today(db, user.id, TODAY, allow_structural_fallback=True)
+    assert review.coach == "chill"
+    put_settings(db, user.id, {"coach_style": "strict"})
+    assert db.get(DailyReview, (user.id, TODAY)).coach == "chill"
 
 
 # --- evaluate_today: author + editor branches ----------------------------
@@ -143,6 +159,7 @@ def test_author_review_authors_week_and_notes(db, user, monkeypatch):
     assert review.mode == "author"
     assert review.proposal_id is None
     assert review.coach_note == "Easy week to rebuild after the block."
+    assert review.coach == "default"
     authored = db.query(PlanDay).filter_by(user_id=user.id, date=TODAY).one()
     assert authored.workout_type == "easy_run"
     assert db.query(PendingEdit).count() == 0

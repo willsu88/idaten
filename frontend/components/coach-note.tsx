@@ -10,6 +10,7 @@ import { ThumbsDown, ThumbsUp } from "lucide-react";
 import type { FeedbackState } from "@/lib/types";
 import { api, safe } from "@/lib/api";
 import { useCoach } from "@/components/coach-provider";
+import { InfoTip } from "@/components/metric-info";
 import type { Persona } from "@/components/persona-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -191,6 +192,7 @@ export function CoachNote({
   persona: personaProp,
   ask,
   feedback,
+  info,
   collapsible = false,
   className,
 }: {
@@ -199,6 +201,8 @@ export function CoachNote({
   ask?: { label: string; onClick: () => void };
   /** Enable the quality thumbs on this note; absent = unrated (week rationales etc.). */
   feedback?: CoachNoteFeedback;
+  /** Optional ⓘ next to the name (e.g. "written by your previous coach"). */
+  info?: { title: string; body: string };
   /** Collapse to a one-line preview with a More/Less toggle (Week page). */
   collapsible?: boolean;
   className?: string;
@@ -219,6 +223,7 @@ export function CoachNote({
           />
         )}
         <span className="text-sm font-medium">{persona?.name ?? "Coach"}</span>
+        {info && <InfoTip title={info.title} body={info.body} className="-ml-1" />}
         {collapsible && (
           <button
             type="button"
