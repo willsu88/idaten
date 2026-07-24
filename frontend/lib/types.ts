@@ -88,6 +88,23 @@ export interface PlanDay {
   // The matched run's execution score, when a run was attributed to this day
   // (status is then "completed"). Absent/null = no matched run yet.
   execution?: { score: number; source: "garmin" | "idaten" | null; activity_id: number } | null;
+  // Non-run sessions recorded this day (strength, yoga, rides…) — support work
+  // done alongside the run plan. Absent/empty = none.
+  support?: SupportActivity[];
+  // This day's strength-lane session (planned or completed); null/absent = none.
+  strength?: StrengthSession | null;
+}
+
+/** A completed non-run session, as listed on Today (`support_activities`) and
+ * per Week day (`support`). Their load already counts toward CTL/ATL/ramp;
+ * these entries make the work visible. */
+export interface SupportActivity {
+  id: number;
+  type: string; // Garmin typeKey, e.g. "strength_training"
+  name: string;
+  duration_min: number | null;
+  training_load?: number | null; // Today only
+  rpe?: number | null; // Today only
 }
 
 /** GET /api/plan/week `summary` — the week's load in the plan's own currency
@@ -98,6 +115,7 @@ export interface WeekSummary {
   done_min: number; // all completed activities in the week (any sport)
   run_km: number | null; // completed run distance
   easy_pct: number | null; // Z1+Z2 share of zone time (the 80/20 check)
+  strength: { target: number; done: number } | null; // null = not opted in
 }
 
 export interface Activity {
@@ -286,7 +304,31 @@ export interface PendingEdit {
   rationale: string;
   changes: PlanDay[];
   current: PlanDay[];
+  // Proposed strength sessions (the support lane) — null/absent for run edits.
+  strength?: StrengthProposalSession[] | null;
   status: "pending" | "accepted" | "dismissed" | "superseded";
+}
+
+export interface StrengthProposalSession {
+  date: string;
+  duration_min: number | null;
+  focus: string;
+  rationale: string;
+}
+
+/** A row in the strength lane (support_sessions): planned by the coach
+ * (author mode / accepted proposal) or manually, auto-completed when a synced
+ * strength activity lands on its date. */
+export interface StrengthSession {
+  id: number;
+  date: string;
+  kind: "strength";
+  duration_min: number | null;
+  focus: string;
+  rationale: string;
+  status: "planned" | "completed" | "skipped";
+  source: "author" | "chat_edit" | "manual";
+  activity_id: number | null; // the matching synced activity (null = manual)
 }
 
 export type TrainingPhase = "base" | "build" | "peak" | "taper" | "race";
@@ -387,6 +429,11 @@ export interface DashboardToday {
   attribution_prompt: { activity_id: number; workout_label: string } | null;
   // Today's completed, plan-attributed run: the plan card gives way to this.
   completed_workout: Activity | null;
+  // Today's non-run sessions (strength, yoga, rides…) — shown so a strength
+  // day never reads as "did nothing".
+  support_activities: SupportActivity[];
+  // Today's strength-lane session (planned or completed); null = none.
+  strength_session: StrengthSession | null;
   niggles: Niggle[] | null; // open pain reports (null when nothing open - render nothing)
 }
 
@@ -514,6 +561,11 @@ export interface Settings {
     period_length_days: number; // default 5
   };
   cycle_status?: CyclePhase | null; // today's derived phase (read-only, GET/PUT)
+  // Strength training — the weekly-target contract. 0 sessions = feature off.
+  strength: {
+    sessions_per_week: number; // 0-3
+    focus: "coach" | "full" | "upper" | "lower";
+  };
 
   tutorial_done: boolean; // default false
   page_hints_seen: string[]; // page ids whose first-run coach pointer was dismissed

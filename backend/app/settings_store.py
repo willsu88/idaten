@@ -34,9 +34,18 @@ DEFAULTS: dict = {
         "cycle_length_days": 28,
         "period_length_days": 5,
     },
+    # Strength training — the athlete's weekly-target contract. sessions_per_week
+    # 0 = feature off. The target settles WHETHER strength is wanted; the coach
+    # only ever decides WHEN and WHAT. Guidance, not a quota.
+    "strength": {
+        "sessions_per_week": 0,      # 0-3
+        "focus": "coach",            # coach decides | full | upper | lower
+    },
     "tutorial_done": False,
     "page_hints_seen": [],  # page ids whose first-run coach pointer was dismissed
 }
+
+STRENGTH_FOCUS = ("coach", "full", "upper", "lower")
 
 # Internal keys written by server code only — not in DEFAULTS, so they are
 # invisible to GET/PUT /api/settings and the client can never tamper with them.
@@ -80,6 +89,20 @@ def normalize_cycle(value) -> dict:
     return base
 
 
+def normalize_strength(value) -> dict:
+    """Coerce a stored/submitted strength blob into the canonical shape (same
+    robustness contract as normalize_cycle): bad fields fall back to defaults."""
+    base = dict(DEFAULTS["strength"])
+    if not isinstance(value, dict):
+        return base
+    n = value.get("sessions_per_week")
+    if isinstance(n, int) and not isinstance(n, bool) and 0 <= n <= 3:
+        base["sessions_per_week"] = n
+    if value.get("focus") in STRENGTH_FOCUS:
+        base["focus"] = value["focus"]
+    return base
+
+
 def get_settings(db: Session, user_id: int) -> dict:
     out = dict(DEFAULTS)
     for row in db.scalars(select(Setting).where(Setting.user_id == user_id)):
@@ -94,6 +117,7 @@ def get_settings(db: Session, user_id: int) -> dict:
     if not isinstance(out.get("page_hints_seen"), list):
         out["page_hints_seen"] = []
     out["cycle"] = normalize_cycle(out.get("cycle"))
+    out["strength"] = normalize_strength(out.get("strength"))
     # Whoever pays for the tokens picks the model: non-admins always run on the
     # server default, even if an old row holds a value from before the gate.
     user = db.get(User, user_id)
@@ -116,6 +140,8 @@ def put_settings(db: Session, user_id: int, values: dict, is_admin: bool = True)
         values = {k: v for k, v in values.items() if k != "page_hints_seen"}
     if "cycle" in values:
         values = {**values, "cycle": normalize_cycle(values["cycle"])}
+    if "strength" in values:
+        values = {**values, "strength": normalize_strength(values["strength"])}
     if not is_admin:
         values = {k: v for k, v in values.items() if k != "llm_provider"}
     for key in DEFAULTS:

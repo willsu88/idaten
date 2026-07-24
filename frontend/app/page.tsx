@@ -22,6 +22,7 @@ import { EditProposalCard } from "@/components/edit-proposal-card";
 import { RpeCard } from "@/components/rpe-card";
 import { AttributionCard } from "@/components/attribution-card";
 import { ResultCard } from "@/components/result-card";
+import { StrengthTodayCard, SupportSessionCard } from "@/components/support-session-card";
 import { PhaseChip, usePlanInfo } from "@/components/training-phases-card";
 import { CoachModeBadge } from "@/components/coach-mode-badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -263,6 +264,10 @@ export default function TodayPage() {
                   onChanged={load}
                 />
               )}
+
+              <StrengthTodayCard session={data?.strength_session ?? null} onChanged={load} />
+
+              <SupportSessionCard sessions={data?.support_activities ?? []} />
 
               {data?.unrated_activity && (
                 <RpeCard activity={data.unrated_activity} onRated={load} />

@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from .. import metrics, rate_limit
 from .. import niggles as niggles_mod
+from .. import support as support_mod
 from ..llm import make_client
 from ..models import ChatMessage, PendingEdit, User
 from ..settings_store import get_settings
@@ -81,6 +82,8 @@ into): {garmin_plan}
 Today's readiness: {readiness}
 Active niggles (pain/injury the athlete has reported, still open; none if clear):
 {niggles}
+Strength training (the athlete's weekly-target contract from Settings; "off"
+if they haven't opted in): {strength}
 
 Rules:
 - Ground every claim about training, recovery, or the plan in tool results — call
@@ -106,6 +109,16 @@ Rules:
   move hard work off a painful area (propose_plan_edit), and never green-light
   pushing through real pain. You are a coach, not a clinician — for severity-3
   or persistent pain, advise seeing a professional rather than diagnosing.
+- Strength sessions live in their own lane beside the run plan. When the
+  athlete has opted in (strength block above is not "off") and asks for
+  strength this week — or sessions remain unplaced (`remaining_to_plan` > 0)
+  and they raise the topic — use propose_strength_sessions: pick days on or
+  after easy/rest days, never the day before a quality session or the long
+  run, 20-40 min, focus per their preference ('coach' = your choice; an open
+  niggle biases toward prevention work for that area). Same approval contract
+  as plan edits: it's a proposal, never claim it's scheduled. The target is
+  guidance — never nag about missed sessions. If they ask for strength while
+  NOT opted in, point them to the Strength card in Settings instead.
 - Plan days can carry structured `steps` (blocks of warmup/work/recovery/cooldown;
   repeat blocks for interval sets, e.g. 6 x [800m work, 400m float]). When you
   propose a tempo/interval/long session, include concrete steps consistent with the
@@ -156,6 +169,8 @@ def _system_prompt(db: Session, user: User) -> str:
         garmin_plan=json.dumps(garmin_plan_context(db, user.id, today)),
         readiness=json.dumps(readiness) if readiness else "no data yet",
         niggles=json.dumps(niggles_mod.active_niggles(db, user.id, today) or "none"),
+        strength=json.dumps(
+            support_mod.strength_signal(db, user.id, today, settings) or "off"),
     ) + style_prompt(settings)
 
 

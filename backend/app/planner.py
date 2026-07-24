@@ -17,7 +17,7 @@ import threading
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import feedback as feedback_mod, metrics, niggles
+from . import feedback as feedback_mod, metrics, niggles, support as support_mod
 from .llm import make_client
 from .models import (
     Activity, DailyHealth, DailyReview, DayIntent, PendingEdit, PlanDay,
@@ -117,8 +117,28 @@ PLAN_SCHEMA: dict = {
             "type": "string",
             "description": "Short summary of what changed vs the previous plan and why. Empty string if nothing changed.",
         },
+        "strength_sessions": {
+            "type": "array",
+            "description": (
+                "Strength sessions placed into the week — ONLY when the snapshot "
+                "has a `strength` block (the athlete opted in); otherwise an "
+                "empty array. At most strength.target_per_week entries, minus "
+                "what's already done this week."
+            ),
+            "items": {
+                "type": "object",
+                "properties": {
+                    "date": {"type": "string", "description": "YYYY-MM-DD, within the 7-day window"},
+                    "duration_min": {"type": ["number", "null"], "description": "Typically 20-40"},
+                    "focus": {"type": "string", "description": "Short focus, e.g. 'hips & glutes', 'full body'"},
+                    "rationale": {"type": "string", "description": "One line: why this day / this focus"},
+                },
+                "required": ["date", "duration_min", "focus", "rationale"],
+                "additionalProperties": False,
+            },
+        },
     },
-    "required": ["days", "adjustment_note"],
+    "required": ["days", "adjustment_note", "strength_sessions"],
     "additionalProperties": False,
 }
 
@@ -201,6 +221,22 @@ Structured workouts (the `steps` field) and variety:
   distribution, no conflicting double-hard days) rather than fighting it.
 - Variety matters across weeks: avoid repeating the exact same quality template
   the current plan already used when an equivalent alternative exists.
+
+Strength sessions (`strength_sessions` in the output):
+- Only when the snapshot has a `strength` block — the athlete asked for
+  strength.target_per_week sessions/week in Settings. No block → empty array.
+  You decide WHEN and WHAT, never WHETHER.
+- Place up to `remaining_to_plan` sessions on suitable days: on or after easy
+  days or rest days, NEVER the day before (or the same day as) a quality
+  session or the long run. Spread them out; 20-40 minutes is typical.
+- The target is GUIDANCE, not a quota: on a high-ramp, low-readiness, or
+  heavy-niggle week place fewer (or none) and let the day rationales say why.
+- Focus follows `focus_preference` ('coach' = your choice, rotate sensibly).
+  An open niggle overrides preference: bias toward prevention work for the
+  affected area (e.g. knee → hips/glutes, achilles → calves/ankles).
+- These are separate from `days` (which stay run/rest as usual — a strength
+  session can share a date with an easy run or rest day). Don't mention
+  strength inside run-day rationales; each session carries its own.
 Return only data conforming to the schema.
 """
 
@@ -515,6 +551,9 @@ def build_snapshot(db: Session, user_id: int, today: dt.date) -> dict:
         "last_7_days_activities": recent_acts,
         "current_upcoming_plan": current_plan,
         "load_ramp": metrics.ramp_signal(db, user_id, today, planned_days=current_plan),
+        # The athlete's weekly strength-target contract (absent until they opt
+        # in via Settings) — target/done/planned/remaining, computed in code.
+        "strength": support_mod.strength_signal(db, user_id, today, settings),
     }
 
 
@@ -829,6 +868,15 @@ def generate_plan(db: Session, user_id: int, source: str = "daily_job") -> list[
     for warning in check_week(days, snapshot["quality_budget"], chronic):
         log.warning("plan check (user %s): %s", user_id, warning)
     changed = apply_plan_days(db, user_id, days, source, result.get("adjustment_note", ""))
+    # Strength lane (author mode places directly — the athlete's own plan, no
+    # approval step). Clamped to what the weekly target still allows.
+    strength = snapshot.get("strength")
+    if strength:
+        budget = max(0, strength["target_per_week"] - strength["done_this_week"])
+        placed = support_mod.apply_sessions(
+            db, user_id, result.get("strength_sessions") or [],
+            source="author", today=today, target=budget, replace=True)
+        log.info("strength placed (%s): %d sessions", source, len(placed))
     log.info("plan generated (%s): %d days, %d changed", source, len(days), len(changed))
     return changed
 
@@ -1033,7 +1081,7 @@ def revert_to_garmin(
 
 def create_pending_edit(
     db: Session, user_id: int, days: list[dict], summary: str, rationale: str,
-    today: dt.date | None = None,
+    today: dt.date | None = None, strength: list[dict] | None = None,
 ) -> tuple[PendingEdit | None, dict | None]:
     """Create a superseding pending plan edit, guarded by the pace profile.
 
@@ -1041,10 +1089,23 @@ def create_pending_edit(
     so both get identical grounding + supersession. Returns (edit, None) on
     success or (None, error_dict) when there are no days or the pace guard
     rejects a target (the error echoes the profile so the caller can re-propose).
+    `strength` attaches strength-lane placements to the same proposal (validated
+    against the athlete's weekly target); a proposal may be strength-only.
     """
-    if not days:
-        return None, {"error": "no days provided"}
     today = today or dt.date.today()
+    strength_valid: list[dict] = []
+    if strength:
+        target = (get_settings(db, user_id).get("strength") or {}).get(
+            "sessions_per_week") or 0
+        strength_valid = [
+            {"date": d.isoformat(), "duration_min": raw.get("duration_min"),
+             "focus": str(raw.get("focus") or ""),
+             "rationale": str(raw.get("rationale") or "")}
+            for d, raw in support_mod._valid_sessions(
+                strength, today, today + dt.timedelta(days=6), target)
+        ]
+    if not days and not strength_valid:
+        return None, {"error": "no days provided"}
     profile = metrics.pace_profile(db, user_id, today)
     violations = pace_violations(days, profile)
     if violations:
@@ -1070,6 +1131,7 @@ def create_pending_edit(
     edit = PendingEdit(
         user_id=user_id, summary=clean_llm_text(summary), rationale=clean_llm_text(rationale),
         changes=days, current=[c for c in current if c],
+        strength=strength_valid or None,
     )
     db.add(edit)
     db.commit()
@@ -1097,19 +1159,33 @@ REVIEW_SCHEMA: dict = {
             "description": (
                 "True ONLY when the data clearly warrants changing the plan (a "
                 "readiness red-flag on a hard day, hard sessions clustered without "
-                "recovery, a structural spacing problem). False when the plan is "
-                "sound — most days are false; do not invent churn."
+                "recovery, a structural spacing problem) OR when unplaced strength "
+                "sessions should be offered (strength_sessions filled, days may be "
+                "[]). False when the plan is sound — most days are false; do not "
+                "invent churn."
             ),
         },
         "proposal": {
             "type": ["object", "null"],
-            "description": "The change when should_propose is true; null otherwise. Include only the days that change.",
+            "description": (
+                "The change when should_propose is true; null otherwise. Include "
+                "only the days that change. A proposal may be strength-only: "
+                "days [] with strength_sessions filled."
+            ),
             "properties": {
                 "summary": {"type": "string", "description": "One line, e.g. 'Ease Thursday threshold to easy — HRV 28% below baseline'"},
                 "rationale": {"type": "string", "description": "Why, citing the athlete's data"},
                 "days": {"type": "array", "items": _REVIEW_DAY_ITEM},
+                "strength_sessions": {
+                    "type": "array",
+                    "description": (
+                        "Strength placements to propose (empty unless the "
+                        "snapshot's strength block warrants placing sessions)."
+                    ),
+                    "items": PLAN_SCHEMA["properties"]["strength_sessions"]["items"],
+                },
             },
-            "required": ["summary", "rationale", "days"],
+            "required": ["summary", "rationale", "days", "strength_sessions"],
             "additionalProperties": False,
         },
     },
@@ -1203,6 +1279,29 @@ Always, in both modes:
   building. One down week never justifies alarm (the 28-day baseline absorbs
   it); never cite raw ratio numbers in the coach_note — speak in plain terms
   ('your volume has climbed quickly these two weeks').
+- Non-run sessions in recent_activities (strength, yoga, rides, hikes…) are
+  REAL training, not idle days — their load already counts in the training-load
+  aggregates. Acknowledge them naturally when relevant ('good strength session
+  yesterday'), factor them into fatigue reasoning (heavy legs the day after
+  strength work is normal, not a red flag), and never describe a day with one
+  as having done nothing. Do not score or critique them — they aren't
+  prescribed workouts.
+- strength (only present when the athlete set a weekly strength target in
+  Settings): the athlete's own contract — target_per_week sessions, with
+  done_this_week / planned_upcoming / remaining_to_plan computed for you.
+  A planned or completed strength day is part of the week's load: don't stack
+  a hard run the morning after a heavy strength session. Acknowledge a
+  completed session briefly and warmly when it's relevant to today; NEVER nag
+  about missed sessions. When remaining_to_plan > 0 and suitable days remain
+  ahead (on/after easy or rest days, never the day before a quality session or
+  the long run), you MAY attach placements via the proposal's
+  strength_sessions — a proposal can be strength-only (should_propose true,
+  days []). Place once, early in the week, 20-40 min each; if the athlete
+  dismisses it, let it go (this is enforced too). Mention the placement in the
+  coach_note naturally ('I've suggested a short strength session Thursday').
+  An open niggle makes prevention-focused strength work worth an encouraging
+  mention and biases the placement's focus (knee → hips/glutes, achilles →
+  calves).
 - The coach_note is the athlete's daily touchpoint. Be specific and cite numbers;
   when things are on track, say so and why (e.g. 'VO2max 52->53 and your Riegel
   half prediction now clears your goal pace'). Never manufacture enthusiasm or
@@ -1398,9 +1497,17 @@ def _evaluate_today_locked(
     proposal_id = None
     if result.get("should_propose") and result.get("proposal"):
         proposal = result["proposal"]
+        strength_sessions = proposal.get("strength_sessions") or []
+        # Anti-nag: a strength proposal dismissed this week stays dismissed —
+        # the review never re-offers placements until next week (chat still can).
+        if strength_sessions and support_mod.strength_proposal_muted(db, user_id, today):
+            log.info("review strength placements muted (user %s): dismissed this week",
+                     user_id)
+            strength_sessions = []
         edit, error = create_pending_edit(
             db, user_id, proposal.get("days") or [],
             proposal.get("summary", ""), proposal.get("rationale", ""), today,
+            strength=strength_sessions,
         )
         if error is not None:
             log.warning("review proposal rejected (user %s): %s", user_id,

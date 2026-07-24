@@ -38,6 +38,9 @@ export function WeekSummaryLine({
       );
     }
     if (summary.run_km != null) parts.push(`${summary.run_km} km run`);
+    if (summary.strength) {
+      parts.push(`${summary.strength.done} of ${summary.strength.target} strength`);
+    }
   }
   if (parts.length === 0) return null;
   return (

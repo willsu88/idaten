@@ -244,6 +244,31 @@ class Niggle(Base):
         DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class SupportSession(Base):
+    """A planned non-run session (strength for now) — the parallel lane beside
+    plan_days. Deliberately NOT a PlanDay: it never collides with editor-mode
+    materialization, watch push, or run execution scoring. A synced strength
+    activity on the session's date auto-completes it; a manual "did it" covers
+    watchless sessions."""
+
+    __tablename__ = "support_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    date: Mapped[dt.date] = mapped_column(Date, index=True)
+    kind: Mapped[str] = mapped_column(String, default="strength")  # strength (only, for now)
+    duration_min: Mapped[float | None] = mapped_column(Float)
+    focus: Mapped[str] = mapped_column(String, default="")  # "hips & glutes", "full body"
+    rationale: Mapped[str] = mapped_column(Text, default="")  # the coach's one-line why
+    status: Mapped[str] = mapped_column(String, default="planned")  # planned|completed|skipped
+    source: Mapped[str] = mapped_column(String, default="manual")  # author|chat_edit|manual
+    # The synced activity that completed this session (null for manual completes).
+    activity_id: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class PlanDay(Base):
     __tablename__ = "plan_days"
 
@@ -290,6 +315,9 @@ class PendingEdit(Base):
     rationale: Mapped[str] = mapped_column(Text, default="")
     changes: Mapped[Any] = mapped_column(JSON, default=list)  # proposed PlanDay dicts
     current: Mapped[Any] = mapped_column(JSON, default=list)  # pre-edit PlanDay dicts
+    # Proposed strength sessions ({date, duration_min, focus, rationale} dicts);
+    # nullable=True is required — Mapped[Any] JSON columns are NOT NULL by default.
+    strength: Mapped[Any] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String, default="pending")  # pending|accepted|dismissed
 
 

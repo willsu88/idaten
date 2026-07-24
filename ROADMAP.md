@@ -1,7 +1,8 @@
 # Garmin Bot — Roadmap & Decisions
 
 Working document. Current state, agreed decisions, and the phased build plan.
-Updated: 2026-07-20 (product + architecture review with Will: six new IDEAS captured below - injury/niggle signal, per-user token/cost accounting, proactive morning delivery, coach-quality feedback loop, macro/periodization guardrail, strength as first-class; plus two model-agnostic-seam findings. None built yet).
+Updated: 2026-07-23 (Idea F strength/cross-training selected as the next block and spec'd: parallel support-sessions lane, weekly-target Settings contract, works in both author and editor mode - see the Idea F DESIGN SPEC below; not built).
+Prior: 2026-07-20 (product + architecture review with Will: six new IDEAS captured below - injury/niggle signal, per-user token/cost accounting, proactive morning delivery, coach-quality feedback loop, macro/periodization guardrail, strength as first-class; plus two model-agnostic-seam findings. None built yet).
 Prior: 2026-07-19 (execution score + analysis SHIPPED end-to-end: scoring, attribution, review feedback, forward-looking coach-attributed analysis; plus no-em-dash house style, Trends 7-day daily charts, About hidden from nav. Hill-run workouts still a backlog idea, not built).
 
 ## IDEAS — 2026-07-20 product + architecture review (captured, design still open)
@@ -182,6 +183,84 @@ Want: strength and cross-training as real, plannable, trackable sessions - not j
 Lower priority and larger surface (new session types, new UI, non-run "execution"), so noted as a later idea, not part of the next block.
 
 **Open questions:** do we PLAN strength (prescribe) or just LOG it; how it interacts with the run-only execution score; whether Garmin's strength-activity data is rich enough to score against, or it stays a simple did-it log.
+
+**DESIGN SPEC (2026-07-23, Will + design review; NOT built). Selected as the next block.**
+
+Grounding facts from code (verified 2026-07-23):
+- The LOAD side already works: sync ingests ALL activity types and `metrics.load_series` sums load from every activity, so strength/cross sessions already count toward CTL/ATL/TSB and the ramp signal.
+What is missing is visibility (UI and snapshot don't name them) and planning (the coach can't prescribe them).
+- `PlanDay` is one row per (user, date) with a single `workout_type` - "easy run + strength after" is not representable in the run-plan table.
+
+**DECIDED - the parallel-lane architecture.**
+Strength/mobility/cross lives in its OWN lightweight table (`support_sessions`: date, kind, duration_min, focus, note, status, source), a lane BESIDE the run plan, never a second session inside `plan_days`.
+Consequences, all intentional:
+- Both modes support it identically, because the author/editor split governs only the RUN lane.
+Garmin plans are run-only and always will be, so Idaten's coach is the sole owner of the strength lane in BOTH modes.
+- Zero collision with editor-mode materialization and its override-protection rules - the daily re-copy never touches the strength lane.
+- Execution scoring stays run-only; strength completion is a simple did-it: a synced Garmin strength/cardio activity on the session's date auto-completes it, with a manual "did it without the watch" tap as fallback (DayIntent spirit).
+- In editor mode, strength cards are badged as the Idaten coach's - never passed off as Garmin's plan (existing rule).
+
+**DECIDED - the weekly target setting is the contract (Will 2026-07-23).**
+A "Strength training" Settings card: sessions per week (0-3, default 0 = feature opt-in) + focus preference (coach decides [default] / full body / upper / lower).
+This turns "should the coach suggest strength?" into a deterministic signal, the house pattern:
+- `weekly_target - (planned + done this week)` is computed in code and added to `build_snapshot`.
+The coach never decides WHETHER strength is wanted (the athlete said so); it decides WHEN and WHAT.
+- Author mode: plan generation receives the target and PLACES the sessions when it writes the week - after easy days, never the day before quality or the long run, respecting the ramp budget.
+Ships as part of the plan (no approval step), same as every other authored day; still written to the support lane.
+- Editor mode: the coach PROPOSES placements around Garmin's run week through the existing approval queue - same target, same signal, different write path, mirroring exactly how the modes already differ for run edits.
+- The target is GUIDANCE, not a quota: on a high-ramp or heavy-niggle week the coach may place fewer and say why.
+- No nagging on missed sessions (niggle precedent): propose placement early in the week, never guilt-trip.
+- Niggle interplay is the payoff: an open niggle biases focus toward targeted prevention work (knee -> hips/glutes) regardless of the focus preference, and the snapshot lets the coach connect "skipped both strength sessions the week the knee flared".
+
+**UX surfaces:**
+- Today: a compact secondary card under the run workout ("+ Strength · 25 min · hips & glutes") with a one-line why; flips to done on sync-match.
+- Week: a small badge on days carrying a session; the week summary line gains "2 of 2 strength". The week keeps reading as a RUN week with support work attached.
+- Chat: the natural front door, like niggles - "add some strength this week" -> proposal.
+- Settings: the target card above.
+
+**Phasing:**
+1. Phase 1 - SEE it: surface synced non-run activities properly on Today/Week/Activities and name recent support sessions in `build_snapshot`. Render + snapshot work only, no planning.
+2. Phase 2 - PLAN it: `support_sessions` table, the Settings target, author-mode placement, editor-mode proposals, done-matching, Today/Week cards.
+3. Phase 3 (later, only if wanted): push a simple timed strength workout to the watch, structured exercise content, quality scoring. This is where the surface gets big - deferred.
+
+**Open questions (settle at build time):** exact `kind` taxonomy (strength / mobility / cross vs just strength first); whether the coach may propose EXCEEDING the target (lean no - respect the contract, suggest changing the setting instead); how the review speaks about a completed strength session (brief acknowledgement vs silence); whether Phase 1 ships alone or folded into Phase 2.
+
+**BUILD LOG — Phase 1 (SEE it) DONE + DEPLOYED 2026-07-23 (contract v1.31; 382 backend tests green; tsc + next build clean; predeploy backup `garmin_bot_backup_predeploy_support_20260723.db` taken in-container; live smoke: unauth today/week 401, frontend 200, new code confirmed in the running image):**
+- Scoping finding that shrank the phase: the coach and the load model already SEE non-run activities - sync ingests all types, `load_series` sums load from every activity, and `build_snapshot.recent_activities` has no run filter (7-day window, with type/name/duration). The Activities list already handles all types with filter chips too. Phase 1 was therefore pure surfacing: Today, Week, and a prompt bullet.
+- **`GET /api/dashboard/today` gains `support_activities`** - today's non-run activities (`type` not containing "run", so every `…running` variant stays a run): id, type, name, duration_min, training_load, rpe (athlete RPE, else Garmin-logged).
+- **`GET /api/plan/week` `days[]` gain `support`** - per-day non-run sessions (id, type, name, duration_min), built from the `week_acts` query the summary already ran (no extra query).
+- **Frontend:** new `components/support-session-card.tsx` - `SupportSessionCard` on Today (below the workout/result card, rendered only when something was done; icon + name + type · duration · RPE, links to activity detail) and `SupportChip` on Week day rows (icon + duration chip beside the intent chip, z-raised above the row's nav link). `SupportActivity` type in `lib/types.ts`.
+- **Prompt:** `REVIEW_SYSTEM_PROMPT` bullet - non-run sessions are real training, already counted in the load aggregates; acknowledge naturally, factor into fatigue reasoning (heavy legs after strength work is normal), never describe such a day as "did nothing", never score them.
+- **Tests:** `test_support_activities.py` (3: today lists non-run only with rpe fallback + excludes `…running` variants and yesterday; empty case; week per-day mapping).
+- **Still open:** live browser eyeball of both surfaces (SupportSessionCard on Today, SupportChip on Week - fire only on a day with a real non-run activity).
+
+**BUILD LOG — Phase 2 (PLAN it) DONE + DEPLOYED 2026-07-23 (contract v1.32; 397 backend tests green; tsc + next build clean; predeploy backup `garmin_bot_backup_predeploy_strength_20260723.db` in-container; live smoke: unauth today/strength 401, frontend 200, `support_sessions` table + `pending_edits.strength` column auto-migrated, no startup errors). Taxonomy decision (Will): strength ONLY - the `kind` column leaves room for mobility/cross later.**
+- **`support_sessions` table** (`models.py`, auto-created): id, user_id, date, kind, duration_min, focus, rationale, status planned|completed|skipped, source author|chat_edit|manual, activity_id. `PendingEdit` gains nullable `strength` JSON (the Mapped[Any] NOT-NULL gotcha honored; additive column auto-migrates).
+- **Settings contract:** `strength` blob {sessions_per_week 0-3 default 0, focus coach|full|upper|lower} in `settings_store.DEFAULTS` + `normalize_strength` on GET/PUT (cycle pattern).
+- **`app/support.py`** - the lane's module: `strength_signal` (Mon-Sun target/done/planned_upcoming/remaining; done counts DISTINCT days with a completed session or any strength activity, so unplanned gym work honors the contract), `match_completed` (idempotent read-path auto-complete: planned session + synced `%strength%` activity same date -> completed + activity_id; no sync hook needed), `apply_sessions` (validating writer: in-window dates, one per date, clamped to target; `replace=True` for the author's daily re-plan drops its own stale placements but NEVER touches manual/completed rows - the materialization rule transplanted), `create_strength_proposal` (the PendingEdit twin of create_pending_edit, same supersession).
+- **Author mode:** `PLAN_SCHEMA` gains required `strength_sessions`; SYSTEM_PROMPT placement rules (only when the snapshot has a strength block; after easy/rest days, never before quality/long run; guidance-not-quota; niggle overrides focus preference); `generate_plan` applies clamped to `target - done_this_week` with replace=True. `build_snapshot` gains `strength` (None until opted in - flows to plan, review, and chat).
+- **Editor mode / chat:** `propose_strength_sessions` tool (rejects when not opted in, pointing the athlete to Settings); `accept_edit` applies `edit.strength` as source=chat_edit (additive upsert, replace=False - an accepted proposal must not wipe author placements on other days); chat system prompt carries the strength signal + placement/no-nagging rules; `edit_dict` exposes `strength`.
+- **REVIEW_SYSTEM_PROMPT:** strength bullet - part of the week's load (no hard run the morning after heavy strength), brief warm acknowledgement, NEVER nag; remaining_to_plan mid-week at most earns a light "ask me in chat" nudge; niggle -> prevention-work mention.
+- **API:** `POST /api/strength` (manual add; 409 on a non-planned holder; upserts over a planned coach placement), `POST /api/strength/{id}/complete`, `DELETE /api/strength/{id}` - ownership-checked; today gains `strength_session`; week days gain `strength` + summary gains `strength {target, done}`.
+- **Frontend:** `StrengthTrainingCard` (Settings, Off/1/2/3 + focus, optimistic like cycle), `StrengthTodayCard` (planned card with the coach's why + Mark done; hides itself when auto-completed - the activity's own row covers it), `StrengthChip` on Week rows (dashed planned / solid green manual-done), week summary "1 of 2 strength", `EditProposalCard` renders strength proposals as addition rows.
+- **Tests:** `test_strength.py` (15: normalizer clamps, settings roundtrip, signal gating/counting, match completes + ignores runs, apply clamp/validate, replace preserves manual+completed, proposal opt-in gate, proposal->accept roundtrip, chat dispatch both gates, manual add/complete/delete + 409, tenant isolation, today/week payloads, snapshot gating). Updated: tool-inventory set, week-summary empty shape.
+- **Still open:** live browser eyeball (Settings card, a real author-mode placement, a chat proposal roundtrip); Week has no manual "add strength" affordance yet (chat or the coach covers it).
+
+**FOLLOW-UP — review-initiated strength placements + Settings mode tooltip, DONE + DEPLOYED 2026-07-24 (contract v1.32.1; 403 backend tests green; tsc + next build clean; predeploy backup `garmin_bot_backup_predeploy_strengthreview_20260724.db` in-container; live smoke: unauth today 401, frontend 200, backend log clean):**
+- **The editor-mode gap closed.** The daily review can now ATTACH strength placements to its proposal instead of only nudging toward chat: `REVIEW_SCHEMA.proposal` gains `strength_sessions` (planner item shape), and a proposal may be strength-only (`should_propose` true, `days: []`).
+- **One shared path.** `create_pending_edit` gains a `strength` param (validated against the weekly target via `support._valid_sessions`); `create_strength_proposal` now delegates to it, so chat and review share one validation + supersession path. Placements land on the same `PendingEdit.strength`, so the existing proposal card renders them with zero frontend changes.
+- **Anti-nag enforced in code, not just prompt:** `support.strength_proposal_muted` - a strength-carrying proposal dismissed this week (chat- or review-created) mutes review placements until Monday; the call site strips them before `create_pending_edit`, and a stripped-to-empty proposal creates no edit. Run-only dismissals never mute; chat can still propose any time.
+- **Prompt:** the REVIEW strength bullet now says place-don't-nudge (once, early in the week, suitable days only, dismissal is final - "this is enforced too"); `should_propose` description names unplaced strength as a valid reason.
+- **Settings UX (Will's ask):** the strength card's "Sessions per week" label gains an `InfoTip` - author mode auto-places around your runs; Garmin Coach (editor) mode proposes for approval; either way guidance-not-quota.
+- **Tests (6 new in `test_strength.py`, 21 total):** strength-only pending edit, empty-both rejection, mute set/cleared by dismissal, run-only dismissal doesn't mute, editor review attaches placements end-to-end (stubbed LLM), muted review creates no edit.
+
+**CODE-REVIEW FIXES — 2026-07-24 (post-review; 405 backend tests green; tsc clean; NOT yet deployed):**
+- A /code-review pass (8 finder angles + verification) found two CONFIRMED bugs in the proposal-ACCEPT path, both the same root: accept-time re-validation against CURRENT state silently dropped approved sessions while returning ok.
+  (1) Late accept: `apply_sessions` was windowed on `dt.date.today()`, so accepting a Tuesday proposal on Saturday dropped its Wed/Fri sessions.
+  (2) Target lowered (e.g. to 0) between proposal and accept clamped the write to nothing.
+- **Fix (one principle):** the approval is the authority - accept now validates against the proposal's own creation window (`edit.created_at.date()`) and never re-clamps (`target=len(edit.strength)`). Past-dated sessions applied late still reconcile via `match_completed` if the athlete actually trained. Two regression tests added (`test_strength.py`, 23 total).
+- Also swept the em dash out of the four USER-VISIBLE strings the review flagged (strength card description, InfoTip body, two toasts) per the no-em-dash rule - hardcoded UI strings bypass the runtime `strip_em_dashes` that protects LLM output. Comments/prompts keep the repo's existing style.
+- Review findings NOT acted on (accepted as-is at household scale, tracked here): `strength_signal` double-queries the strength-activity range (restructure `match_completed` to share the prefetch); `strength_proposal_muted` filters week + strength-ness in Python instead of the SQL WHERE.
 
 ## SECURITY HARDENING — pre-open-source + pre-multi-user (captured 2026-07-20, from a code read; NONE fixed yet except where noted)
 

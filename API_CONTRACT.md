@@ -1560,3 +1560,82 @@ UI: the Today review note renders avatar + name from this stamp, not the current
 On the day of a switch (stamped coach differs from the current one) a small ⓘ next to the name explains: the old coach wrote this morning's note, and starting tomorrow the daily review comes from the new coach.
 The chat header keeps reflecting the CURRENT coach - attribution ("who said this") is frozen; presence ("who am I talking to") is live.
 Implemented via a generic `InfoTip` extracted from `MetricInfo` (same popover, dynamic copy) and an optional `info` prop on `CoachNote`.
+
+## v1.31 - support activities (non-run sessions surfaced)
+
+Non-run sessions (strength, yoga, rides, hikes…) become visible on Today and Week.
+Their training load already counted toward CTL/ATL/ramp; this only surfaces them.
+
+```ts
+interface SupportActivity {
+  id: number;                    // activity id — links to /activities/{id}
+  type: string;                  // Garmin typeKey, e.g. "strength_training"
+  name: string;
+  duration_min: number | null;
+  training_load?: number | null; // Today only
+  rpe?: number | null;           // Today only; athlete RPE, else Garmin-logged
+}
+```
+
+- `GET /api/dashboard/today` gains `support_activities: SupportActivity[]` — today's non-run activities (empty when none).
+- `GET /api/plan/week` `days[]` gain `support: SupportActivity[]` — that day's non-run activities (no `training_load`/`rpe`).
+- "Non-run" = the activity `type` does not contain "run", so every `…running` variant stays a run.
+
+UI: Today renders a compact `SupportSessionCard` under the workout/result card (icon, name, type · duration · RPE, links to the activity detail); Week day rows show a small `SupportChip` (icon + duration) per session.
+The review system prompt now tells the coach these are real training — acknowledge them, factor them into fatigue reasoning, never treat such a day as "did nothing", and never score them.
+
+## v1.32 - the strength lane (Idea F Phase 2: plan it)
+
+Strength sessions become plannable: a parallel `support_sessions` lane beside the run plan, driven by a weekly-target Settings contract.
+Nothing here touches plan_days, watch push, or execution scoring.
+
+```ts
+interface StrengthSession {
+  id: number;
+  date: string;
+  kind: "strength";
+  duration_min: number | null;
+  focus: string;               // "hips & glutes", "full body", …
+  rationale: string;           // the coach's one-line why
+  status: "planned" | "completed" | "skipped";
+  source: "author" | "chat_edit" | "manual";
+  activity_id: number | null;  // synced activity that auto-completed it
+}
+```
+
+### Settings
+
+`Settings` gains `strength: { sessions_per_week: number /* 0-3, 0 = off */, focus: "coach" | "full" | "upper" | "lower" }`.
+Server-normalized like `cycle` (bad values fall back to defaults).
+
+### Endpoints
+
+- `POST /api/strength` body `{ date, duration_min?, focus? }` → `StrengthSession` - manual planned session (409 if a non-planned session already holds the date; upserts over a planned coach placement).
+- `POST /api/strength/{id}/complete` → `StrengthSession` - manual "did it" (watchless sessions).
+- `DELETE /api/strength/{id}` → `{ ok: true }`.
+- `GET /api/dashboard/today` gains `strength_session: StrengthSession | null` (planned sessions auto-complete on read when a synced strength activity shares the date).
+- `GET /api/plan/week` `days[]` gain `strength: StrengthSession | null`; `summary` gains `strength: { target, done } | null` (null = not opted in). `done` counts distinct days with a completed session or any strength activity.
+- `PendingEdit` gains `strength: StrengthProposalSession[] | null` (`{date, duration_min, focus, rationale}`) - a strength-placement proposal from chat; accept via the existing `POST /api/edits/{id}/accept`.
+
+### Coach behavior
+
+- The snapshot gains `strength` (null until opted in): `{ target_per_week, focus_preference, done_this_week, planned_upcoming, remaining_to_plan }` - computed in code; the athlete's setting decides WHETHER, the coach only WHEN and WHAT.
+- Author mode: `generate_plan`'s schema gains `strength_sessions`; placements are clamped to the remaining weekly budget and written to the lane directly (the athlete's own plan, no approval step). The daily re-plan may move its own placements but never touches manual or completed rows.
+- Editor mode / chat: new `propose_strength_sessions` tool rides the PendingEdit approval queue - same contract as plan edits, nothing scheduled until accepted.
+- Target is guidance, not a quota; no nagging about missed sessions; an open niggle biases focus toward prevention work.
+
+### UI
+
+- Settings: "Strength training" card (Off/1/2/3 + focus select, optimistic save).
+- Today: planned-session card with the coach's why and a "Mark done" button; disappears when a synced activity auto-completes it (the activity shows in the support list instead).
+- Week: dashed chip for a planned session (solid green when manually completed); summary line gains "1 of 2 strength".
+- Proposal card renders strength placements as addition rows (no before/after diff) under the header "Proposed strength sessions".
+
+## v1.32.1 - review-initiated strength placements + Settings mode tooltip
+
+Closes the editor-mode gap: the daily review can now propose strength placements itself, instead of only nudging toward chat.
+
+- `REVIEW_SCHEMA`'s `proposal` gains `strength_sessions` (same item shape as the planner's); a proposal may be strength-only (`days: []`).
+- `create_pending_edit` accepts the placements and validates them against the weekly target; they land on the same `PendingEdit.strength` field, so the existing proposal card renders them with zero UI changes.
+- Anti-nag guard (enforced in code, not just prompt): a strength-carrying proposal dismissed this week mutes review placements until next week; chat can still propose any time. Run-only dismissals don't mute.
+- Settings: the strength card's "Sessions per week" gains an InfoTip explaining the author/editor difference (auto-placed vs proposed-for-approval) and the guidance-not-quota posture.

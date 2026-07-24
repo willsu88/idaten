@@ -42,6 +42,29 @@ function DaySummary({ day, muted }: { day: PlanDay | null; muted?: boolean }) {
   );
 }
 
+/** Proposed strength-lane sessions — additions beside the run plan, so no
+ * before/after diff: one row per session with day, duration, focus, why. */
+function StrengthProposal({ edit }: { edit: PendingEdit }) {
+  if (!edit.strength?.length) return null;
+  return (
+    <div className="space-y-2">
+      {edit.strength.map((s) => (
+        <div key={s.date} className="rounded-xl border border-border bg-background/50 p-3">
+          <p className="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            {formatDay(s.date)}
+          </p>
+          <p className="text-sm font-medium">
+            {["Strength", formatDuration(s.duration_min), s.focus].filter(Boolean).join(" · ")}
+          </p>
+          {s.rationale && (
+            <p className="text-xs text-muted-foreground">{s.rationale}</p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function EditDiff({ edit }: { edit: PendingEdit }) {
   const currentByDate = new Map(edit.current.map((d) => [d.date, d]));
   return (
@@ -162,7 +185,7 @@ export function EditProposalCard({
         <div className="flex items-center gap-2 text-accent">
           <GitBranch className="h-4 w-4" />
           <span className="text-xs font-semibold uppercase tracking-wider">
-            Proposed plan change
+            {edit.strength?.length ? "Proposed strength sessions" : "Proposed plan change"}
           </span>
         </div>
         <CardTitle className="text-base">{edit.summary}</CardTitle>
@@ -170,6 +193,7 @@ export function EditProposalCard({
       </CardHeader>
       <CardContent>
         <EditDiff edit={edit} />
+        <StrengthProposal edit={edit} />
         {!resolved && (
           <p className="mt-3 text-xs text-muted-foreground">
             Nothing changes until you accept - this is only a proposal.

@@ -51,4 +51,5 @@ def test_summary_empty_week(client, db, user):
     res = client.get(f"/api/plan/week?start={MONDAY.isoformat()}")
     assert res.status_code == 200
     s = res.json()["summary"]
-    assert s == {"planned_min": None, "done_min": 0, "run_km": None, "easy_pct": None}
+    assert s == {"planned_min": None, "done_min": 0, "run_km": None,
+                 "easy_pct": None, "strength": None}

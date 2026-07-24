@@ -34,6 +34,7 @@ import { ScoreRing } from "@/components/execution-score";
 import { WeekStrip, WeekSummaryLine } from "@/components/week-strip";
 import { RevertButton } from "@/components/revert-button";
 import { IntentChip, OtherSportButton } from "@/components/intent-dialog";
+import { StrengthChip, SupportChip } from "@/components/support-session-card";
 import { PhaseChip, usePlanInfo } from "@/components/training-phases-card";
 import { CoachModeBadge } from "@/components/coach-mode-badge";
 import { Badge } from "@/components/ui/badge";
@@ -157,6 +158,20 @@ function DayRow({
           {intent && (
             <span className="relative z-20 shrink-0">
               <IntentChip intent={intent} onRemoved={onChanged} />
+            </span>
+          )}
+          {/* Non-run sessions done this day (strength, yoga…) — support work
+              shown beside the run plan, linking to the activity. */}
+          {(day.support ?? []).map((s) => (
+            <span key={s.id} className="relative z-20 shrink-0">
+              <SupportChip session={s} />
+            </span>
+          ))}
+          {/* Strength-lane session: dashed while planned; auto-completed ones
+              are covered by the activity's SupportChip above. */}
+          {day.strength && !(day.strength.status === "completed" && day.strength.activity_id != null) && (
+            <span className="shrink-0">
+              <StrengthChip session={day.strength} />
             </span>
           )}
           {/* Completed → the execution-score medallion (links to the run); the

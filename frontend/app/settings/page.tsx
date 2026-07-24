@@ -10,6 +10,7 @@ import { MetricInfo } from "@/components/metric-info";
 import { NigglesSettingsCard } from "@/components/niggle-card";
 import { PageHeader } from "@/components/page-header";
 import { PERSONAS, PersonaCard } from "@/components/persona-card";
+import { StrengthTrainingCard } from "@/components/strength-training-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -268,6 +269,19 @@ export default function SettingsPage() {
       });
   };
 
+  // Optimistic strength-target save — same pattern as the cycle toggle.
+  const changeStrength = (strength: Settings["strength"]) => {
+    if (!settings) return;
+    const previous = settings.strength;
+    update({ strength });
+    api.putSettings({ strength })
+      .then((saved) => setSettings((s) => (s ? { ...s, ...saved } : saved)))
+      .catch(() => {
+        setSettings((s) => (s ? { ...s, strength: previous } : s));
+        toast("Couldn't save your strength setting - try again in a moment.", "error");
+      });
+  };
+
   if (loading) {
     return (
       <div>
@@ -422,6 +436,8 @@ export default function SettingsPage() {
             })()}
           </CardContent>
         </Card>
+
+        <StrengthTrainingCard settings={settings} onChange={changeStrength} />
 
         <CycleTrackingCard settings={settings} onToggle={toggleCycle} />
 

@@ -28,6 +28,7 @@ import type {
   PlanDay,
   Race,
   Settings,
+  StrengthSession,
   SyncStatus,
   TrainingPlanInfo,
   TrendPoint,
@@ -238,6 +239,15 @@ export const api = {
 
   deleteIntent: (date: string) =>
     request<{ ok: true }>(`/api/intents/${date}`, { method: "DELETE" }),
+
+  addStrength: (body: { date: string; duration_min?: number | null; focus?: string }) =>
+    request<StrengthSession>("/api/strength", { method: "POST", body: JSON.stringify(body) }),
+
+  completeStrength: (id: number) =>
+    request<StrengthSession>(`/api/strength/${id}/complete`, { method: "POST" }),
+
+  deleteStrength: (id: number) =>
+    request<{ ok: true }>(`/api/strength/${id}`, { method: "DELETE" }),
 
   backfill: (days: number) =>
     request<{ ok: true; started: true }>("/api/backfill", {

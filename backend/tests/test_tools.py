@@ -19,7 +19,7 @@ def test_schema_names_match_dispatch():
     assert names == {
         "get_training_data", "get_current_plan", "get_plan_history",
         "set_day_intent", "clear_day_intent", "propose_plan_edit",
-        "log_niggle", "resolve_niggle",
+        "log_niggle", "resolve_niggle", "propose_strength_sessions",
     }
 
 

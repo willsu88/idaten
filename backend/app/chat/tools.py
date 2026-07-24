@@ -175,6 +175,40 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "propose_strength_sessions",
+            "description": (
+                "Propose strength-session placements for the next 7 days (the "
+                "strength lane beside the run plan). Only when the athlete has "
+                "opted in via Settings (see the strength block in your context). "
+                "Same approval contract as propose_plan_edit: the user must "
+                "accept before anything is scheduled — never claim it's placed."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "summary": {"type": "string", "description": "One line, e.g. 'Two strength sessions: Tue & Fri'"},
+                    "rationale": {"type": "string", "description": "Why these days/focus, citing the athlete's data"},
+                    "sessions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "date": {"type": "string", "description": "YYYY-MM-DD within the next 7 days"},
+                                "duration_min": {"type": ["number", "null"], "description": "Typically 20-40"},
+                                "focus": {"type": "string", "description": "e.g. 'hips & glutes', 'full body'"},
+                                "rationale": {"type": "string", "description": "One line: why this day / this focus"},
+                            },
+                            "required": ["date", "duration_min", "focus", "rationale"],
+                        },
+                    },
+                },
+                "required": ["summary", "rationale", "sessions"],
+            },
+        },
+    },
 ]
 
 
@@ -186,6 +220,7 @@ def edit_dict(e: PendingEdit) -> dict:
         "rationale": e.rationale,
         "changes": e.changes,
         "current": e.current,
+        "strength": e.strength,  # proposed strength sessions (null for run edits)
         "status": e.status,
     }
 
@@ -357,6 +392,21 @@ def dispatch(
         return (
             json.dumps({"status": "proposed", "edit_id": edit.id,
                         "note": "Awaiting user approval in the UI. Do not claim it is applied."}),
+            edit,
+        )
+
+    if name == "propose_strength_sessions":
+        from .. import support as support_mod
+
+        edit, error = support_mod.create_strength_proposal(
+            db, user_id, args.get("sessions") or [],
+            args.get("summary", ""), args.get("rationale", ""),
+        )
+        if error is not None:
+            return json.dumps(error), None
+        return (
+            json.dumps({"status": "proposed", "edit_id": edit.id,
+                        "note": "Awaiting user approval in the UI. Do not claim it is scheduled."}),
             edit,
         )
 

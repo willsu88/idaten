@@ -19,7 +19,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import (crypto, execution, feedback as feedback_mod, metrics,
-               niggles as niggles_mod, rate_limit, races as races_mod, scheduler)
+               niggles as niggles_mod, rate_limit, races as races_mod, scheduler,
+               support as support_mod)
 from .config import config
 from .auth import (
     COOKIE_NAME,
@@ -51,6 +52,7 @@ from .models import (
     PendingEdit,
     PlanDay,
     Race,
+    SupportSession,
     SyncLog,
     TrainingPlan,
     User,
@@ -424,6 +426,35 @@ def dashboard_today(db: Session = Depends(get_db), user: User = Depends(current_
                      "analysis_feedback": feedback_mod.feedback_state(
                          db, user.id, "execution_analysis", todays_scored.id)}
 
+    # Today's non-run sessions (strength, yoga, cycling, walks…). Their load
+    # already counts toward CTL/ATL/ramp; this makes them *visible* so a
+    # strength day never reads as "did nothing".
+    support = [
+        {
+            "id": a.id,
+            "type": a.type,
+            "name": a.name,
+            "duration_min": round(a.duration_s / 60, 1) if a.duration_s else None,
+            "training_load": a.training_load,
+            "rpe": a.rpe if a.rpe is not None else a.garmin_rpe,
+        }
+        for a in db.scalars(
+            select(Activity)
+            .where(Activity.user_id == user.id, Activity.date == today,
+                   Activity.type.not_like("%run%"))
+            .order_by(Activity.id)
+        )
+    ]
+
+    # The strength lane: auto-complete planned sessions a synced strength
+    # activity covers, then surface today's session (planned or done).
+    support_mod.match_completed(db, user.id, today)
+    strength_today = db.scalars(
+        select(SupportSession).where(SupportSession.user_id == user.id,
+                                     SupportSession.date == today)
+        .order_by(SupportSession.id).limit(1)
+    ).first()
+
     mode = plan_mode(db, user.id, today)
     cycle = get_settings(db, user.id).get("cycle")
     workout_dict = None
@@ -446,6 +477,9 @@ def dashboard_today(db: Session = Depends(get_db), user: User = Depends(current_
         "unrated_activity": _activity_dict(unrated) if unrated else None,
         "attribution_prompt": attribution,
         "completed_workout": completed,
+        "support_activities": support,
+        "strength_session": (support_mod.session_dict(strength_today)
+                             if strength_today else None),
         "niggles": niggles_mod.active_niggles(db, user.id, today),
     }
 
@@ -605,6 +639,32 @@ def plan_week(start: str | None = None, db: Session = Depends(get_db),
         if total:
             zone_s["easy"] += z.get("z1", 0) + z.get("z2", 0)
             zone_s["total"] += total
+    # Non-run sessions per day (strength, yoga, rides…) so the week shows the
+    # support work done alongside the run plan.
+    support: dict[dt.date, list[dict]] = {}
+    for a in week_acts:
+        if "run" in (a.type or ""):
+            continue
+        support.setdefault(a.date, []).append({
+            "id": a.id,
+            "type": a.type,
+            "name": a.name,
+            "duration_min": round(a.duration_s / 60, 1) if a.duration_s else None,
+        })
+    # The strength lane: planned/completed sessions per day + a target/done
+    # summary count (null when the athlete hasn't opted in).
+    support_mod.match_completed(db, user.id, dt.date.today())
+    strength_by_date = {
+        s.date: support_mod.session_dict(s)
+        for s in support_mod.week_sessions(
+            db, user.id, start_date, start_date + dt.timedelta(days=6))
+    }
+    strength_summary = None
+    target = (get_settings(db, user.id).get("strength") or {}).get("sessions_per_week") or 0
+    if target:
+        done_days = {d for d, s in strength_by_date.items() if s["status"] == "completed"}
+        done_days |= {a.date for a in week_acts if "strength" in (a.type or "")}
+        strength_summary = {"target": target, "done": len(done_days)}
     return {
         "mode": mode,
         "summary": {
@@ -613,6 +673,7 @@ def plan_week(start: str | None = None, db: Session = Depends(get_db),
             "run_km": round(run_km, 1) if run_km else None,
             "easy_pct": (round(100 * zone_s["easy"] / zone_s["total"])
                          if zone_s["total"] else None),
+            "strength": strength_summary,
         },
         "days": [
             {**plan_day_dict(d), "revertible": d.date in revertible,
@@ -621,7 +682,9 @@ def plan_week(start: str | None = None, db: Session = Depends(get_db),
                  {"score": scored[d.date].execution_score,
                   "source": scored[d.date].execution_score_source,
                   "activity_id": scored[d.date].id}
-                 if d.date in scored else None)}
+                 if d.date in scored else None),
+             "support": support.get(d.date, []),
+             "strength": strength_by_date.get(d.date)}
             for d in days
         ],
     }
@@ -1697,6 +1760,15 @@ def accept_edit(edit_id: int, db: Session = Depends(get_db),
     edit = _own_pending_edit(db, user.id, edit_id)
     changed = apply_plan_days(db, user.id, edit.changes, source="chat_edit",
                               summary=edit.summary)
+    if edit.strength:
+        # The approval is the authority: validate against the proposal's own
+        # creation window (a late accept must not drop already-dated sessions)
+        # and never re-clamp against the current target (the athlete approved
+        # these exact sessions, even if they changed the setting since).
+        support_mod.apply_sessions(db, user.id, edit.strength,
+                                   source="chat_edit",
+                                   today=edit.created_at.date(),
+                                   target=len(edit.strength))
     edit.status = "accepted"
     db.commit()
     if get_settings(db, user.id).get("auto_push_workouts") and changed:
@@ -1709,6 +1781,65 @@ def dismiss_edit(edit_id: int, db: Session = Depends(get_db),
                  user: User = Depends(current_user)):
     edit = _own_pending_edit(db, user.id, edit_id)
     edit.status = "dismissed"
+    db.commit()
+    return {"ok": True}
+
+
+# --- strength sessions (the support lane beside the run plan) -----------------
+
+class StrengthBody(BaseModel):
+    date: str
+    duration_min: float | None = None
+    focus: str = ""
+
+
+def _own_session(db: Session, user_id: int, session_id: int) -> SupportSession:
+    s = db.get(SupportSession, session_id)
+    if s is None or s.user_id != user_id:
+        raise HTTPException(404, "no such strength session")
+    return s
+
+
+@router.post("/strength")
+def add_strength(body: StrengthBody, db: Session = Depends(get_db),
+                 user: User = Depends(current_user)):
+    """Manually add a planned strength session (one per date; upserts a
+    planned coach placement on the same date into a manual one)."""
+    try:
+        date = dt.date.fromisoformat(body.date)
+    except ValueError:
+        raise HTTPException(422, "date must be YYYY-MM-DD")
+    existing = db.scalars(
+        select(SupportSession).where(SupportSession.user_id == user.id,
+                                     SupportSession.date == date)
+    ).first()
+    if existing is not None and existing.status != "planned":
+        raise HTTPException(409, "a strength session already exists on this date")
+    s = existing or SupportSession(user_id=user.id, date=date)
+    s.kind = "strength"
+    s.duration_min = body.duration_min
+    s.focus = body.focus.strip()
+    s.status = "planned"
+    s.source = "manual"
+    db.add(s)
+    db.commit()
+    return support_mod.session_dict(s)
+
+
+@router.post("/strength/{session_id}/complete")
+def complete_strength(session_id: int, db: Session = Depends(get_db),
+                      user: User = Depends(current_user)):
+    """Manual "did it" — for sessions done without the watch."""
+    s = _own_session(db, user.id, session_id)
+    s.status = "completed"
+    db.commit()
+    return support_mod.session_dict(s)
+
+
+@router.delete("/strength/{session_id}")
+def delete_strength(session_id: int, db: Session = Depends(get_db),
+                    user: User = Depends(current_user)):
+    db.delete(_own_session(db, user.id, session_id))
     db.commit()
     return {"ok": True}
 
