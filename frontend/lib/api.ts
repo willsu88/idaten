@@ -35,6 +35,7 @@ import type {
   UsageSummary,
   UserInfo,
   WeekSummary,
+  WeekSummaryResponse,
 } from "./types";
 import type { ReorderMove } from "./reorder";
 
@@ -173,6 +174,17 @@ export const api = {
     request<DailyReview>("/api/dashboard/evaluate", {
       method: "POST",
       body: JSON.stringify({ allow_structural: allowStructural }),
+    }),
+
+  // Weekly summary: cheap read (any date in the week), and the lazy trigger
+  // for the one weekly LLM call (idempotent; Monday's scheduler is the eager path).
+  weekSummary: (start?: string) =>
+    request<WeekSummaryResponse>(`/api/week/summary${start ? `?start=${start}` : ""}`),
+
+  weekSummaryEvaluate: (start: string) =>
+    request<WeekSummaryResponse>("/api/week/summary/evaluate", {
+      method: "POST",
+      body: JSON.stringify({ start }),
     }),
 
   planWeek: (start?: string) =>

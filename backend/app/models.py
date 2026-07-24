@@ -384,6 +384,28 @@ class DailyReview(Base):
 REVIEW_STATES = ("pending_data", "done_full", "done_structural")
 
 
+class WeeklySummary(Base):
+    """One row per user per summary week (fixed Mon-Sun, app timezone): the
+    coach's retrospective on a CLOSED training week — the fifth coach call
+    site, its own artifact, never part of an activity or daily review (ADR
+    0002). Unlike DailyReview there is no pending state machine: a closed
+    week's data has already synced, so the row exists only once written."""
+
+    __tablename__ = "weekly_summaries"
+
+    user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    week_start: Mapped[dt.date] = mapped_column(Date, primary_key=True)  # always a Monday
+    coach_note: Mapped[str] = mapped_column(Text, default="")
+    # Persona stamped at generation time; a later coach switch never
+    # re-attributes an old summary (same contract as DailyReview.coach).
+    coach: Mapped[str | None] = mapped_column(String)
+    # Provenance for the quality-feedback loop (COACH_QUALITY.md): frozen
+    # producing inputs + system-prompt hash, stamped at generation time.
+    snapshot: Mapped[Any] = mapped_column(JSON, nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Feedback(Base):
     """A thumbs rating (or proposal-dismiss reason) on a coach-authored output.
 

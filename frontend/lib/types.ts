@@ -184,7 +184,28 @@ export interface GearSuggestion {
 /** The caller's own rating on one artifact; null = never rated. */
 export type FeedbackState = { rating: 1 | -1 | null; tags: string[]; comment: string } | null;
 
-export type FeedbackSurface = "coach_note" | "execution_analysis" | "edit_proposal";
+export type FeedbackSurface =
+  | "coach_note"
+  | "execution_analysis"
+  | "edit_proposal"
+  | "weekly_summary";
+
+/** GET /api/week/summary — the coach's retrospective on one closed summary
+ * week (Mon-Sun). Its own artifact: permanent on the Week page, spotlighted on
+ * Today on Mondays. `generatable` = missing, but the lazy evaluate POST could
+ * still write it (only the most recently closed week qualifies). */
+export interface WeeklyCoachSummary {
+  week_start: string;
+  coach_note: string;
+  coach: string | null; // persona that wrote it, frozen at generation time
+  my_feedback?: FeedbackState;
+}
+
+export interface WeekSummaryResponse {
+  week_start: string;
+  summary: WeeklyCoachSummary | null;
+  generatable: boolean;
+}
 
 /** One aggregated bucket in the admin quality view (counts, not rates). */
 export interface FeedbackBucket {

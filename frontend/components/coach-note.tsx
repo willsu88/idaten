@@ -19,8 +19,8 @@ import { cn } from "@/lib/utils";
 
 /** Wiring for the quality thumbs: which artifact this note is, and my rating. */
 export type CoachNoteFeedback = {
-  surface: "coach_note" | "execution_analysis";
-  ref: string; // review date ISO, or activity id as string
+  surface: "coach_note" | "execution_analysis" | "weekly_summary";
+  ref: string; // review date ISO, activity id as string, or week start ISO
   state: FeedbackState;
 };
 

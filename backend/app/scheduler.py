@@ -24,6 +24,7 @@ from .garmin.push import push_days
 from .garmin.sync import run_sync
 from .metrics import has_recovery_data
 from .models import DailyHealth, DailyReview, SyncLog, User
+from . import weekly
 from .planner import evaluate_today, materialize_coach_plan, plan_mode
 from .settings_store import get_settings
 
@@ -80,6 +81,20 @@ def _eager_review(db: Session, user: User, today: dt.date) -> None:
         db.rollback()
 
 
+def _eager_weekly(db: Session, user: User, today: dt.date) -> None:
+    """Monday's weekly summary (CONTEXT.md / ADR 0002): written before the
+    daily review fires, though the two are independent — the review never
+    consumes it. Idempotent and failure-isolated like _eager_review; the lazy
+    /week/summary/evaluate path recovers a missed Monday."""
+    if today.weekday() != 0:
+        return
+    try:
+        weekly.evaluate_week(db, user.id, weekly.last_closed_week(today), today=today)
+    except Exception:  # noqa: BLE001
+        log.exception("eager weekly summary failed for user %d", user.id)
+        db.rollback()
+
+
 def _job_for_user(db: Session, user: User, source: str) -> dict:
     """Scheduled work: Garmin data + (editor mode) refresh the coach-plan base
     + the eager daily review once recovery data is present.
@@ -98,6 +113,7 @@ def _job_for_user(db: Session, user: User, source: str) -> dict:
                    detail=f"synced through {synced_through}",
                    plan_updated=bool(changed)))
     db.commit()
+    _eager_weekly(db, user, today)   # Mondays: the week's retrospective first
     _eager_review(db, user, today)
     return {"ok": True, "synced_through": synced_through, "plan_updated": bool(changed)}
 
@@ -251,6 +267,7 @@ def _retry_pending_reviews() -> None:
         try:
             user = db.get(User, user_id)
             if user is not None:
+                _eager_weekly(db, user, today)  # idempotent no-op off Mondays
                 _eager_review(db, user, today)
         finally:
             db.close()

@@ -34,6 +34,7 @@ import { CyclePhaseChip } from "@/components/cycle-phase-chip";
 import { PushButton } from "@/components/workout-card";
 import { ScoreRing } from "@/components/execution-score";
 import { WeekStrip, WeekSummaryLine } from "@/components/week-strip";
+import { WeeklySummaryCard } from "@/components/weekly-summary-card";
 import { WeekReorderList } from "@/components/week-reorder";
 import { buildMoves, hasChanges, initialAssignment, isLockedDay } from "@/lib/reorder";
 import { RevertButton } from "@/components/revert-button";
@@ -575,6 +576,18 @@ function WeekPageInner() {
           />
         )}
       </div>
+
+      {/* The coach's week-in-review: permanent for any summarized past week
+          (ADR 0002). Lazy-generates only for the most recently closed week —
+          older weeks show what exists or nothing. */}
+      {!loading && !isCurrentWeek && (
+        <div className="mb-6">
+          <WeeklySummaryCard
+            weekStart={weekStart}
+            evaluate={weekStart === addDays(currentMonday, -7)}
+          />
+        </div>
+      )}
 
       {/* Week actions — a dedicated left-aligned toolbar so they don't stagger
           in the header. Primary (ask the coach) first, then watch/plan management.

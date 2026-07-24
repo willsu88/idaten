@@ -17,6 +17,7 @@ import { ReadinessCard } from "@/components/readiness-card";
 import { CycleTodayCard } from "@/components/cycle-today-card";
 import { NiggleCard } from "@/components/niggle-card";
 import { DailyCoachNote } from "@/components/daily-coach-note";
+import { WeeklySummaryCard } from "@/components/weekly-summary-card";
 import { TodayWorkoutCard } from "@/components/workout-card";
 import { EditProposalCard } from "@/components/edit-proposal-card";
 import { RpeCard } from "@/components/rpe-card";
@@ -217,6 +218,17 @@ export default function TodayPage() {
                   A pending proposal is a decision - never below the fold.
                   Note then proposal: diagnosis before prescription. */}
               <DailyCoachNote onProposal={load} />
+
+              {/* Monday's delivery moment for the weekly summary (ADR 0002):
+                  the retrospective arrives below today's forward-looking note,
+                  then lives permanently on the Week page. */}
+              {new Date(`${isoDate()}T00:00:00`).getDay() === 1 && (
+                <WeeklySummaryCard
+                  weekStart={addDays(mondayOf(isoDate()), -7)}
+                  evaluate
+                  linkToWeek
+                />
+              )}
 
               {data?.pending_edit && (
                 <EditProposalCard edit={data.pending_edit} onResolved={load} />

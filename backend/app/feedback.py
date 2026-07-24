@@ -15,9 +15,9 @@ import hashlib
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Activity, DailyReview, Feedback, PendingEdit
+from .models import Activity, DailyReview, Feedback, PendingEdit, WeeklySummary
 
-SURFACES = ("coach_note", "execution_analysis", "edit_proposal")
+SURFACES = ("coach_note", "execution_analysis", "edit_proposal", "weekly_summary")
 
 # Preset reason chips. The first four are the thumbs-down chips; the last two
 # are the proposal-dismiss reasons ("didn't want the change" is a preference,
@@ -54,6 +54,15 @@ def _resolve_artifact(db: Session, user_id: int, surface: str,
             return None
         return a.execution_analysis, a.execution_analysis_context, \
             a.execution_analysis_prompt_version
+    if surface == "weekly_summary":
+        try:
+            week = dt.date.fromisoformat(ref)
+        except ValueError:
+            return None
+        s = db.get(WeeklySummary, (user_id, week))
+        if s is None or not s.coach_note:
+            return None
+        return s.coach_note, s.snapshot, s.prompt_version
     if surface == "edit_proposal":
         try:
             e = db.get(PendingEdit, int(ref))

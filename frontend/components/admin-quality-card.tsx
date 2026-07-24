@@ -18,6 +18,7 @@ const SURFACE_LABELS: Record<FeedbackSurface, string> = {
   coach_note: "Daily note",
   execution_analysis: "Run analysis",
   edit_proposal: "Plan proposals",
+  weekly_summary: "Week in review",
 };
 
 const TAG_LABELS: Record<string, string> = {

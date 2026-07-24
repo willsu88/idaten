@@ -1661,3 +1661,22 @@ Source of truth is the `chat_messages` table, so the count survives restarts and
 - Admin "By member" table: two new columns - "Msgs today" (`used / cap`) and an editable "Daily cap" (click to edit; blank or `∞` = unlimited), with a caption noting the cap covers chat messages only.
 - Chat composer: quiet "N coach messages left today" hint at <= 2 remaining; at the cap the composer disables itself with "Daily limit reached - the coach is back at midnight".
 - The cap is stored as a server-owned settings key: `GET/PUT /api/settings` can neither read nor write it.
+
+## v1.34 - weekly summary (the coach's week-in-review)
+
+The fifth coach call site (CONTEXT.md, ADR 0002): one persona-voiced retrospective per member per summary week (fixed Mon-Sun, app timezone), its own artifact - never part of an activity or a daily review, and the daily review does not consume it.
+Written eagerly by Monday's daily job (before the daily review, which is independent) and lazily via the evaluate endpoint; always written once the week closes, including a zero-activity week.
+Forward-only: only the most recently closed week is generatable, older weeks are never backfilled; existing rows are readable forever.
+
+### Endpoints
+
+- `GET /api/week/summary?start=YYYY-MM-DD` (any date in the week; defaults to the last closed week) → `{ week_start, summary: { week_start, coach_note, coach, my_feedback } | null, generatable: boolean }`.
+  `generatable` is true only when the summary is missing, `start` falls in the last closed week, and the member's summaries are enabled.
+- `POST /api/week/summary/evaluate` body `{ start }` → same shape; idempotent per week (no second LLM call). 409 when the week is still running or older than the last closed week.
+- `POST /api/feedback` accepts the new surface `weekly_summary` with `ref` = the week's start date (ISO); same thumbs/tags contract as `coach_note`.
+
+### UI
+
+- Week page: a "Week in review" coach card renders above the aggregates for any week with a summary - the artifact's permanent home.
+- Today page, Mondays only: the same card below the daily coach note, linking to the Week page; it lazily POSTs evaluate when `generatable`.
+- Cost-control seam (Idea G): a server-owned `weekly_summary_enabled` settings key, invisible to `GET/PUT /api/settings`; absent = enabled.

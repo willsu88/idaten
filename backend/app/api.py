@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from . import (chat_quota, crypto, execution, feedback as feedback_mod, metrics,
                niggles as niggles_mod, rate_limit, races as races_mod, scheduler,
-               support as support_mod)
+               support as support_mod, weekly as weekly_mod)
 from .config import config
 from .auth import (
     COOKIE_NAME,
@@ -56,6 +56,7 @@ from .models import (
     SyncLog,
     TrainingPlan,
     User,
+    WeeklySummary,
 )
 from . import planner as planner_mod
 from .planner import apply_plan_days, evaluate_today, intent_dict, plan_day_dict, plan_mode
@@ -715,6 +716,66 @@ def plan_week(start: str | None = None, db: Session = Depends(get_db),
              "strength": strength_by_date.get(d.date)}
             for d in days
         ],
+    }
+
+
+def _summary_dict(s, db: Session, user_id: int) -> dict | None:
+    if s is None:
+        return None
+    return {
+        "week_start": s.week_start.isoformat(),
+        "coach_note": s.coach_note,
+        "coach": s.coach,
+        "my_feedback": feedback_mod.feedback_state(
+            db, user_id, "weekly_summary", s.week_start.isoformat()),
+    }
+
+
+@router.get("/week/summary")
+def week_summary(start: str | None = None, db: Session = Depends(get_db),
+                 user: User = Depends(current_user)):
+    """Cheap, no-LLM: the weekly summary for `start`'s summary week (any date
+    in the week; defaults to the last closed week). `generatable` tells the
+    client whether POST /week/summary/evaluate could produce a missing one —
+    only the most recently closed week qualifies (forward-only, ADR 0002)."""
+    today = weekly_mod._today()
+    try:
+        anchor = dt.date.fromisoformat(start) if start else weekly_mod.last_closed_week(today)
+    except ValueError:
+        raise HTTPException(422, "start must be YYYY-MM-DD")
+    week_start = weekly_mod.week_start_of(anchor)
+    s = db.get(WeeklySummary, (user.id, week_start))
+    return {
+        "week_start": week_start.isoformat(),
+        "summary": _summary_dict(s, db, user.id),
+        "generatable": (s is None
+                        and week_start == weekly_mod.last_closed_week(today)
+                        and weekly_mod.summaries_enabled(db, user.id)),
+    }
+
+
+class WeekSummaryBody(BaseModel):
+    start: str
+
+
+@router.post("/week/summary/evaluate")
+def week_summary_evaluate(body: WeekSummaryBody, db: Session = Depends(get_db),
+                          user: User = Depends(current_user)):
+    """Lazy trigger for the weekly summary (the Monday scheduler is the eager
+    path). Idempotent per week: an existing summary is returned without
+    another LLM call. 409 for a week that isn't the last closed one."""
+    try:
+        anchor = dt.date.fromisoformat(body.start)
+    except ValueError:
+        raise HTTPException(422, "start must be YYYY-MM-DD")
+    try:
+        s = weekly_mod.evaluate_week(db, user.id, anchor)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    return {
+        "week_start": weekly_mod.week_start_of(anchor).isoformat(),
+        "summary": _summary_dict(s, db, user.id),
+        "generatable": False,
     }
 
 
