@@ -1,8 +1,9 @@
 ---
 title: Week page edit mode - drag to reorder the week
 labels: [ready-for-agent]
-status: open
+status: done
 created: 2026-07-24
+completed: 2026-07-24  # commit cee977a, verified live by Will
 ---
 
 # Week page edit mode - drag to reorder the week
