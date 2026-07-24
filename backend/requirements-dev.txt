@@ -1,0 +1,5 @@
+# Dev/test-only dependencies, on top of the runtime set.
+# Rebuild the venv with:  python3.11 -m venv .venv && .venv/bin/python -m pip install -r requirements-dev.txt
+# (use the python.org framework 3.11 - see pyvenv.cfg's `home` for the one in use)
+-r requirements.txt
+pytest>=8
