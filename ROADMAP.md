@@ -1,7 +1,8 @@
 # Garmin Bot — Roadmap & Decisions
 
 Working document. Current state, agreed decisions, and the phased build plan.
-Updated: 2026-07-24 (Idea F fully closed out: code-review fixes deployed and live browser eyeball of all strength surfaces done. The A-F block is complete; next candidates are hill runs, model routing, friends).
+Updated: 2026-07-24 (weekly summary spec'd via grilling session - fifth coach call site, own artifact/table, Monday generation, Week page home; see CONTEXT.md + ADR 0002. Idea G captured: per-call-site coach toggles for admin cost control, design open).
+Prior: 2026-07-24 (Idea F fully closed out: code-review fixes deployed and live browser eyeball of all strength surfaces done. The A-F block is complete; next candidates are hill runs, model routing, friends).
 Prior: 2026-07-23 (Idea F strength/cross-training selected as the next block and spec'd: parallel support-sessions lane, weekly-target Settings contract, works in both author and editor mode - see the Idea F DESIGN SPEC below).
 Prior: 2026-07-20 (product + architecture review with Will: six new IDEAS captured below - injury/niggle signal, per-user token/cost accounting, proactive morning delivery, coach-quality feedback loop, macro/periodization guardrail, strength as first-class; plus two model-agnostic-seam findings. None built yet).
 Prior: 2026-07-19 (execution score + analysis SHIPPED end-to-end: scoring, attribution, review feedback, forward-looking coach-attributed analysis; plus no-em-dash house style, Trends 7-day daily charts, About hidden from nav. Hill-run workouts still a backlog idea, not built).
@@ -263,6 +264,12 @@ Ships as part of the plan (no approval step), same as every other authored day; 
 - **Fix (one principle):** the approval is the authority - accept now validates against the proposal's own creation window (`edit.created_at.date()`) and never re-clamps (`target=len(edit.strength)`). Past-dated sessions applied late still reconcile via `match_completed` if the athlete actually trained. Two regression tests added (`test_strength.py`, 23 total).
 - Also swept the em dash out of the four USER-VISIBLE strings the review flagged (strength card description, InfoTip body, two toasts) per the no-em-dash rule - hardcoded UI strings bypass the runtime `strip_em_dashes` that protects LLM output. Comments/prompts keep the repo's existing style.
 - Review findings NOT acted on (accepted as-is at household scale, tracked here): `strength_signal` double-queries the strength-activity range (restructure `match_completed` to share the prefetch); `strength_proposal_muted` filters week + strength-ness in Python instead of the SQL WHERE.
+
+### Idea G - Per-call-site coach toggles (admin cost control; captured 2026-07-24, design open)
+
+Admin-settable per-member toggles that turn individual system-initiated coach artifacts (weekly summary, execution analysis narrative, possibly the daily review note) on or off, trading coaching surface for LLM cost.
+Ticketed: full spec, leanings, and the open daily-review question live in `.scratch/coach-toggles/spec.md`.
+Build note for the weekly-summary feature: generation reads its enabled-flag through one settings check from day one, so Idea G lands as a settings row + UI, not a refactor.
 
 ## SECURITY HARDENING — pre-open-source + pre-multi-user (captured 2026-07-20, from a code read; NONE fixed yet except where noted)
 

@@ -7,11 +7,11 @@ Terms here are canonical: code, UI copy, and docs should use these words with th
 
 ### Coach
 The LLM-backed training assistant.
-It is invoked from four call sites: chat, daily review, plan authoring, and execution analysis.
+It is invoked from five call sites: chat, daily review, plan authoring, execution analysis, and weekly summary.
 
 ### Coach call site
-The feature that triggered an LLM invocation: `chat`, `review`, `plan`, or `execution_analysis`.
-Only `chat` is member-initiated; the other three are system-initiated (scheduled or lazy-loaded).
+The feature that triggered an LLM invocation: `chat`, `review`, `plan`, `execution_analysis`, or `weekly_summary`.
+Only `chat` is member-initiated; the others are system-initiated (scheduled or lazy-loaded).
 
 ### Member
 A user account in the household.
@@ -36,3 +36,12 @@ The admin usage table's "Calls" column counts LLM calls, not chat messages; the 
 ### Burst guard
 The fixed short-window limit on chat messages.
 It is an anti-runaway safety mechanism, not policy, and is not admin-configurable.
+
+### Weekly summary
+The Coach's retrospective on one completed summary week.
+Exactly one exists per member per summary week; it is always written, including for a week with no activities.
+It is a standalone artifact: it does not belong to any activity or daily review, and neither consumes it.
+
+### Summary week
+The fixed window a weekly summary covers: Monday through Sunday in the app timezone, closing at local midnight Sunday.
+A week is only summarized after it has closed.
