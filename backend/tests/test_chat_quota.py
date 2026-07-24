@@ -135,6 +135,17 @@ def test_burst_guard_fires_independently_of_daily_cap(db, client, monkeypatch):
     assert _send(client).status_code == 429
 
 
+def test_rejected_send_does_not_consume_quota(db, client):
+    """A send refused before processing (too long / burst-limited) must not
+    burn the member's daily budget."""
+    from app import rate_limit
+
+    make_user(db, "will")
+    _login(client)
+    assert _send(client, "x" * (rate_limit.MAX_MESSAGE_CHARS + 1)).status_code == 400
+    assert client.get("/api/chat/sessions").json()["quota"]["used"] == 0
+
+
 # --- admin: set-cap endpoint and usage columns -------------------------------
 
 def _make_admin(db, username="will"):

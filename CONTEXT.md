@@ -23,7 +23,6 @@ It applies only to the `chat` call site, never to system-initiated call sites.
 It counts messages per calendar day in the app timezone and resets at local midnight.
 It can be set on any account, including the admin; enforcement is identical for everyone.
 "Unlimited" is a valid value.
-The admin dashboard must state explicitly that the limit covers chat only.
 
 ### Chat message
 One user-sent message to the Coach.
@@ -35,5 +34,5 @@ One request to the LLM provider, recorded as one row of usage.
 The admin usage table's "Calls" column counts LLM calls, not chat messages; the two must never be conflated in UI copy.
 
 ### Burst guard
-The hardcoded short-window limit on chat messages (currently 5 per 5 minutes).
+The fixed short-window limit on chat messages.
 It is an anti-runaway safety mechanism, not policy, and is not admin-configurable.

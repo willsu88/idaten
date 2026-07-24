@@ -75,6 +75,9 @@ function UsageTable({
   );
 }
 
+// Mirrors the backend's CAP_MAX (chat_quota.py) — the PUT rejects anything above.
+const CAP_MAX = 1000;
+
 /** Inline editor for one member's daily chat cap. Blank (or "∞") = unlimited. */
 function CapEditor({
   value,
@@ -94,7 +97,7 @@ function CapEditor({
       return;
     }
     const n = Number(text);
-    if (!Number.isInteger(n) || n < 0 || n > 1000 || n === value) return;
+    if (!Number.isInteger(n) || n < 0 || n > CAP_MAX || n === value) return;
     onSave(n);
   };
 

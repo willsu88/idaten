@@ -1,7 +1,7 @@
 ---
 title: Per-user daily chat message limit, configurable from the admin page
 labels: [ready-for-agent]
-status: open
+status: done
 ---
 
 ## Problem Statement
@@ -44,10 +44,10 @@ Members see a quiet warning when they are nearly out of messages and a friendly 
 - Source of truth for "messages used today" is the persisted chat messages table (user-role rows for the current local day). Enforcement, the admin display, and the member-facing remaining count all read this one source. There is no chat-delete endpoint, so there is no reset loophole.
 - The current admin exemption from the daily quota is removed: everyone is cappable, everyone defaults to 8 per day, and enforcement is identical for all accounts.
 - Cap storage: the existing per-user Setting store, as a server-owned key excluded from the member-facing settings API (like `garmin_profile`). Value semantics: null/absent = default (8), explicit "unlimited" sentinel allowed, 0 = chat disabled.
-- Enforcement stays at the existing checkpoint on the chat POST endpoint, before any LLM spend. The check reads the configurable cap instead of the constant. On block: 429 with a body carrying the reset boundary so the frontend can render "resets at midnight".
+- Enforcement stays at the existing checkpoint on the chat POST endpoint, before any LLM spend. The check reads the configurable cap instead of the constant. On block: 429 with a user-ready detail sentence naming the midnight reset; the composer's blocked state renders from the quota field (below), not by parsing the 429 body.
 - Admin usage endpoint: each `by_user` row gains `msgs_today` and `chat_daily_cap`.
 - One new admin-only endpoint to set an account's cap (accepting an integer, 0, or the unlimited sentinel).
-- Member quota visibility: the existing chat history/session response gains a `quota: {used, cap}` field; the frontend shows a low-quota hint at <= 2 remaining and a blocked composer state at 0. No always-visible counter.
+- Member quota visibility: the chat sessions response gains a `quota: {used, cap}` field, and the chat stream ends with a quota event carrying the post-send count so the hint stays fresh without a refetch. The frontend shows a low-quota hint at <= 2 remaining and a blocked composer state at 0. No always-visible counter.
 - Admin UI: two columns appended to the "By member" table - "Msgs today" rendered as `used/cap`, and an editable "Daily cap" (click to edit; unlimited representable). The table's caption or header notes the limit applies to chat messages only.
 
 ## Testing Decisions

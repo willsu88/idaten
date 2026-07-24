@@ -181,6 +181,8 @@ def usage_summary(days: int = 30, db: Session = Depends(get_db),
     # Every account gets a row (zero-filled without usage) so its chat cap is
     # always visible and editable; msgs_today counts chat messages, NOT the
     # LLM calls in the "calls" column — one message fans out into several.
+    # (Removing an account deletes its llm_usage rows too, so every usage row
+    # here belongs to a listed user and the table reconciles with the total.)
     by_user = sorted(
         [{"user_id": u.id, "name": names[u.id], **usage_rows.get(u.id, zero),
           "msgs_today": chat_quota.used_today(db, u.id),
