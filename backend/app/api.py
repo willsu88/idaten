@@ -719,7 +719,7 @@ def plan_week(start: str | None = None, db: Session = Depends(get_db),
     }
 
 
-def _summary_dict(s, db: Session, user_id: int) -> dict | None:
+def _summary_dict(s: WeeklySummary | None, db: Session, user_id: int) -> dict | None:
     if s is None:
         return None
     return {
@@ -738,7 +738,7 @@ def week_summary(start: str | None = None, db: Session = Depends(get_db),
     in the week; defaults to the last closed week). `generatable` tells the
     client whether POST /week/summary/evaluate could produce a missing one —
     only the most recently closed week qualifies (forward-only, ADR 0002)."""
-    today = weekly_mod._today()
+    today = weekly_mod.app_today()
     try:
         anchor = dt.date.fromisoformat(start) if start else weekly_mod.last_closed_week(today)
     except ValueError:

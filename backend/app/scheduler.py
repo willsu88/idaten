@@ -81,6 +81,18 @@ def _eager_review(db: Session, user: User, today: dt.date) -> None:
         db.rollback()
 
 
+def _weekly_done(db: Session, user_id: int, today: dt.date) -> bool:
+    """Off Mondays there is nothing eager to do, so the weekly counts as done.
+    On Mondays: done once the closed week's row exists, or when the member's
+    summaries are disabled (writing nothing IS the finished state then)."""
+    if today.weekday() != 0:
+        return True
+    if not weekly.summaries_enabled(db, user_id):
+        return True
+    from .models import WeeklySummary
+    return db.get(WeeklySummary, (user_id, weekly.last_closed_week(today))) is not None
+
+
 def _eager_weekly(db: Session, user: User, today: dt.date) -> None:
     """Monday's weekly summary (CONTEXT.md / ADR 0002): written before the
     daily review fires, though the two are independent — the review never
@@ -257,8 +269,11 @@ def _retry_pending_reviews() -> None:
     db = session()
     try:
         users = db.scalars(select(User).order_by(User.id)).all()
+        # A Monday whose weekly-summary LLM call failed must retry even when
+        # the daily review itself succeeded — the two artifacts are independent.
         pending = [u.id for u in users
-                   if has_garmin(u) and not _review_done(db, u.id, today)]
+                   if has_garmin(u) and (not _review_done(db, u.id, today)
+                                         or not _weekly_done(db, u.id, today))]
     finally:
         db.close()
     for user_id in pending:

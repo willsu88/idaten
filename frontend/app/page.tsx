@@ -223,11 +223,7 @@ export default function TodayPage() {
                   the retrospective arrives below today's forward-looking note,
                   then lives permanently on the Week page. */}
               {new Date(`${isoDate()}T00:00:00`).getDay() === 1 && (
-                <WeeklySummaryCard
-                  weekStart={addDays(mondayOf(isoDate()), -7)}
-                  evaluate
-                  linkToWeek
-                />
+                <WeeklySummaryCard linkToWeek />
               )}
 
               {data?.pending_edit && (

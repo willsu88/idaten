@@ -159,7 +159,7 @@ def _login(client, username="will", password="secret1"):
 
 
 def test_get_summary_canonicalizes_and_reports_absent(client, db, user, monkeypatch):
-    monkeypatch.setattr(weekly, "_today", lambda: MONDAY)
+    monkeypatch.setattr(weekly, "app_today", lambda: MONDAY)
     _login(client)
     r = client.get("/api/week/summary", params={"start": (CLOSED_WEEK + dt.timedelta(days=4)).isoformat()})
     assert r.status_code == 200
@@ -170,7 +170,7 @@ def test_get_summary_canonicalizes_and_reports_absent(client, db, user, monkeypa
 
 
 def test_evaluate_endpoint_generates_then_get_returns_it(client, db, user, monkeypatch):
-    monkeypatch.setattr(weekly, "_today", lambda: MONDAY)
+    monkeypatch.setattr(weekly, "app_today", lambda: MONDAY)
     stub = StubWeeklyLLM({"summary": "Week well spent."})
     _use_llm(monkeypatch, stub)
     _login(client)
@@ -187,7 +187,7 @@ def test_evaluate_endpoint_generates_then_get_returns_it(client, db, user, monke
 
 
 def test_evaluate_endpoint_rejects_unclosed_and_backfill_weeks(client, db, user, monkeypatch):
-    monkeypatch.setattr(weekly, "_today", lambda: MONDAY)
+    monkeypatch.setattr(weekly, "app_today", lambda: MONDAY)
     stub = StubWeeklyLLM({"summary": "nope"})
     _use_llm(monkeypatch, stub)
     _login(client)
@@ -206,7 +206,7 @@ def test_old_summary_still_readable_after_its_week_ages_out(client, db, user, mo
     db.add(WeeklySummary(user_id=user.id, week_start=old_week,
                          coach_note="An old but good week.", coach="chill"))
     db.commit()
-    monkeypatch.setattr(weekly, "_today", lambda: MONDAY)
+    monkeypatch.setattr(weekly, "app_today", lambda: MONDAY)
     _login(client)
     r = client.get("/api/week/summary", params={"start": old_week.isoformat()})
     assert r.json()["summary"]["coach_note"] == "An old but good week."
@@ -219,7 +219,7 @@ def test_summary_requires_auth(client, db, user):
 
 
 def test_weekly_summary_feedback_roundtrip(client, db, user, monkeypatch):
-    monkeypatch.setattr(weekly, "_today", lambda: MONDAY)
+    monkeypatch.setattr(weekly, "app_today", lambda: MONDAY)
     stub = StubWeeklyLLM({"summary": "Rate me."})
     _use_llm(monkeypatch, stub)
     _login(client)
@@ -257,6 +257,23 @@ def test_eager_weekly_writes_summary_on_monday_only(db, user, monkeypatch):
 
     scheduler._eager_weekly(db, user, MONDAY)  # already written: no second call
     assert stub.calls == 1
+
+
+def test_catch_up_considers_a_missing_monday_summary_pending(db, user):
+    # A Monday whose weekly LLM call failed must look pending to catch_up even
+    # when the daily review itself succeeded (the artifacts are independent).
+    from app import scheduler
+    from app.models import Setting, WeeklySummary
+    assert scheduler._weekly_done(db, user.id, MONDAY) is False
+    assert scheduler._weekly_done(db, user.id, dt.date(2026, 7, 23)) is True  # Thursday
+
+    db.add(WeeklySummary(user_id=user.id, week_start=CLOSED_WEEK, coach_note="done"))
+    db.commit()
+    assert scheduler._weekly_done(db, user.id, MONDAY) is True
+
+    db.add(Setting(user_id=user.id + 1, key=weekly.ENABLED_KEY, value=False))
+    db.commit()
+    assert scheduler._weekly_done(db, user.id + 1, MONDAY) is True  # disabled = done
 
 
 def test_eager_weekly_failure_never_raises(db, user, monkeypatch):

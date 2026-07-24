@@ -1672,11 +1672,11 @@ Forward-only: only the most recently closed week is generatable, older weeks are
 
 - `GET /api/week/summary?start=YYYY-MM-DD` (any date in the week; defaults to the last closed week) → `{ week_start, summary: { week_start, coach_note, coach, my_feedback } | null, generatable: boolean }`.
   `generatable` is true only when the summary is missing, `start` falls in the last closed week, and the member's summaries are enabled.
-- `POST /api/week/summary/evaluate` body `{ start }` → same shape; idempotent per week (no second LLM call). 409 when the week is still running or older than the last closed week.
+- `POST /api/week/summary/evaluate` body `{ start }` → same shape; idempotent per week (no second LLM call, and an already-summarized week of any age returns its row with 200). 409 only when the week has no summary AND isn't generatable: still running, or older than the last closed week (no backfill).
 - `POST /api/feedback` accepts the new surface `weekly_summary` with `ref` = the week's start date (ISO); same thumbs/tags contract as `coach_note`.
 
 ### UI
 
-- Week page: a "Week in review" coach card renders above the aggregates for any week with a summary - the artifact's permanent home.
+- Week page: a "Week in review" coach card renders below the week navigator (which carries the aggregates line) for any past week with a summary - the artifact's permanent home. Hidden while the viewed week is the current one.
 - Today page, Mondays only: the same card below the daily coach note, linking to the Week page; it lazily POSTs evaluate when `generatable`.
 - Cost-control seam (Idea G): a server-owned `weekly_summary_enabled` settings key, invisible to `GET/PUT /api/settings`; absent = enabled.

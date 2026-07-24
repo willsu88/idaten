@@ -5,9 +5,10 @@
 // home: the Week page, for any week that has one. Delivery moment: Mondays
 // on Today, right below the daily review, linking to the Week page.
 //
-// Lazy fallback mirrors the daily review's: when the summary is missing but
-// still generatable (only the most recently closed week), `evaluate` fires
-// the one idempotent LLM call; older weeks render what exists or nothing.
+// Lazy fallback mirrors the daily review's: when the server reports the
+// summary missing-but-generatable (it alone knows the policy — only the most
+// recently closed week qualifies), the card fires the one idempotent LLM
+// call; older weeks render what exists or nothing.
 
 import * as React from "react";
 import Link from "next/link";
@@ -18,13 +19,11 @@ import { CoachNote } from "@/components/coach-note";
 
 export function WeeklySummaryCard({
   weekStart,
-  evaluate = false,
   linkToWeek = false,
 }: {
-  /** Monday of the summary week to show (any date in the week is normalized server-side). */
-  weekStart: string;
-  /** Generate lazily when missing-but-generatable (Today's Monday card, last closed week on /week). */
-  evaluate?: boolean;
+  /** Any date in the summary week to show (normalized server-side);
+   * omitted = the last closed week (Today's Monday card). */
+  weekStart?: string;
   /** Point at the artifact's permanent home (used on Today). */
   linkToWeek?: boolean;
 }) {
@@ -41,10 +40,10 @@ export function WeeklySummaryCard({
       if (cancelled) return;
       if (res?.summary) {
         setSummary(res.summary);
-      } else if (res?.generatable && evaluate && !startedEval.current) {
+      } else if (res?.generatable && !startedEval.current) {
         startedEval.current = true;
         setEvaluating(true);
-        const generated = await safe(api.weekSummaryEvaluate(weekStart));
+        const generated = await safe(api.weekSummaryEvaluate(res.week_start));
         if (!cancelled) {
           setSummary(generated?.summary ?? null);
           setEvaluating(false);
@@ -55,7 +54,7 @@ export function WeeklySummaryCard({
     return () => {
       cancelled = true;
     };
-  }, [weekStart, evaluate]);
+  }, [weekStart]);
 
   if (evaluating) {
     return (

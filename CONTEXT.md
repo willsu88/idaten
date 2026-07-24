@@ -39,6 +39,7 @@ It is an anti-runaway safety mechanism, not policy, and is not admin-configurabl
 
 ### Weekly summary
 The Coach's retrospective on one completed summary week.
+Its UI display name is "Week in review"; the two refer to the same artifact.
 Exactly one exists per member per summary week; it is always written, including for a week with no activities.
 It is a standalone artifact: it does not belong to any activity or daily review, and neither consumes it.
 

@@ -578,14 +578,12 @@ function WeekPageInner() {
       </div>
 
       {/* The coach's week-in-review: permanent for any summarized past week
-          (ADR 0002). Lazy-generates only for the most recently closed week —
-          older weeks show what exists or nothing. */}
+          (ADR 0002). The server decides generatability — the card lazily
+          fills only the most recently closed week; older weeks show what
+          exists or nothing. */}
       {!loading && !isCurrentWeek && (
         <div className="mb-6">
-          <WeeklySummaryCard
-            weekStart={weekStart}
-            evaluate={weekStart === addDays(currentMonday, -7)}
-          />
+          <WeeklySummaryCard weekStart={weekStart} />
         </div>
       )}
 

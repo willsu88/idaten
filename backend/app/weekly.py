@@ -35,9 +35,9 @@ log = logging.getLogger(__name__)
 ENABLED_KEY = "weekly_summary_enabled"
 
 
-def _today() -> dt.date:
-    """Seam for tests; the app clock is the plain local date, matching the
-    daily review's convention."""
+def app_today() -> dt.date:
+    """The app clock (plain local date, matching the daily review's
+    convention) — public so the API layer and tests share one seam."""
     return dt.date.today()
 
 
@@ -53,8 +53,10 @@ def last_closed_week(today: dt.date) -> dt.date:
 
 
 def summaries_enabled(db: Session, user_id: int) -> bool:
+    """Absent = enabled; any falsy stored value (False, 0, "") = disabled, so
+    a future toggle can't accidentally write a value this reads as enabled."""
     row = db.get(Setting, (user_id, ENABLED_KEY))
-    return row is None or row.value is not False
+    return row is None or bool(row.value)
 
 
 WEEKLY_SUMMARY_SYSTEM_PROMPT = """\
@@ -254,7 +256,7 @@ def evaluate_week(
     the running week isn't over, and older weeks are never backfilled. Any
     date within the week is accepted and normalized to its Monday. Returns
     None when the member's summaries are disabled (Idea G seam)."""
-    today = today or _today()
+    today = today or app_today()
     week_start = week_start_of(week_start)
     generatable = last_closed_week(today)
     if week_start != generatable:
