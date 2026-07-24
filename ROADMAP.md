@@ -1,7 +1,8 @@
 # Garmin Bot — Roadmap & Decisions
 
 Working document. Current state, agreed decisions, and the phased build plan.
-Updated: 2026-07-23 (Idea F strength/cross-training selected as the next block and spec'd: parallel support-sessions lane, weekly-target Settings contract, works in both author and editor mode - see the Idea F DESIGN SPEC below; not built).
+Updated: 2026-07-24 (Idea F fully closed out: code-review fixes deployed and live browser eyeball of all strength surfaces done. The A-F block is complete; next candidates are hill runs, model routing, friends).
+Prior: 2026-07-23 (Idea F strength/cross-training selected as the next block and spec'd: parallel support-sessions lane, weekly-target Settings contract, works in both author and editor mode - see the Idea F DESIGN SPEC below).
 Prior: 2026-07-20 (product + architecture review with Will: six new IDEAS captured below - injury/niggle signal, per-user token/cost accounting, proactive morning delivery, coach-quality feedback loop, macro/periodization guardrail, strength as first-class; plus two model-agnostic-seam findings. None built yet).
 Prior: 2026-07-19 (execution score + analysis SHIPPED end-to-end: scoring, attribution, review feedback, forward-looking coach-attributed analysis; plus no-em-dash house style, Trends 7-day daily charts, About hidden from nav. Hill-run workouts still a backlog idea, not built).
 
@@ -232,7 +233,7 @@ Ships as part of the plan (no approval step), same as every other authored day; 
 - **Frontend:** new `components/support-session-card.tsx` - `SupportSessionCard` on Today (below the workout/result card, rendered only when something was done; icon + name + type · duration · RPE, links to activity detail) and `SupportChip` on Week day rows (icon + duration chip beside the intent chip, z-raised above the row's nav link). `SupportActivity` type in `lib/types.ts`.
 - **Prompt:** `REVIEW_SYSTEM_PROMPT` bullet - non-run sessions are real training, already counted in the load aggregates; acknowledge naturally, factor into fatigue reasoning (heavy legs after strength work is normal), never describe such a day as "did nothing", never score them.
 - **Tests:** `test_support_activities.py` (3: today lists non-run only with rpe fallback + excludes `…running` variants and yesterday; empty case; week per-day mapping).
-- **Still open:** live browser eyeball of both surfaces (SupportSessionCard on Today, SupportChip on Week - fire only on a day with a real non-run activity).
+- Live browser eyeball of both surfaces done 2026-07-24.
 
 **BUILD LOG — Phase 2 (PLAN it) DONE + DEPLOYED 2026-07-23 (contract v1.32; 397 backend tests green; tsc + next build clean; predeploy backup `garmin_bot_backup_predeploy_strength_20260723.db` in-container; live smoke: unauth today/strength 401, frontend 200, `support_sessions` table + `pending_edits.strength` column auto-migrated, no startup errors). Taxonomy decision (Will): strength ONLY - the `kind` column leaves room for mobility/cross later.**
 - **`support_sessions` table** (`models.py`, auto-created): id, user_id, date, kind, duration_min, focus, rationale, status planned|completed|skipped, source author|chat_edit|manual, activity_id. `PendingEdit` gains nullable `strength` JSON (the Mapped[Any] NOT-NULL gotcha honored; additive column auto-migrates).
@@ -244,7 +245,8 @@ Ships as part of the plan (no approval step), same as every other authored day; 
 - **API:** `POST /api/strength` (manual add; 409 on a non-planned holder; upserts over a planned coach placement), `POST /api/strength/{id}/complete`, `DELETE /api/strength/{id}` - ownership-checked; today gains `strength_session`; week days gain `strength` + summary gains `strength {target, done}`.
 - **Frontend:** `StrengthTrainingCard` (Settings, Off/1/2/3 + focus, optimistic like cycle), `StrengthTodayCard` (planned card with the coach's why + Mark done; hides itself when auto-completed - the activity's own row covers it), `StrengthChip` on Week rows (dashed planned / solid green manual-done), week summary "1 of 2 strength", `EditProposalCard` renders strength proposals as addition rows.
 - **Tests:** `test_strength.py` (15: normalizer clamps, settings roundtrip, signal gating/counting, match completes + ignores runs, apply clamp/validate, replace preserves manual+completed, proposal opt-in gate, proposal->accept roundtrip, chat dispatch both gates, manual add/complete/delete + 409, tenant isolation, today/week payloads, snapshot gating). Updated: tool-inventory set, week-summary empty shape.
-- **Still open:** live browser eyeball (Settings card, a real author-mode placement, a chat proposal roundtrip); Week has no manual "add strength" affordance yet (chat or the coach covers it).
+- Live browser eyeball done 2026-07-24 (Settings card, author-mode placement, chat proposal roundtrip).
+- **Still open:** Week has no manual "add strength" affordance yet (chat or the coach covers it).
 
 **FOLLOW-UP — review-initiated strength placements + Settings mode tooltip, DONE + DEPLOYED 2026-07-24 (contract v1.32.1; 403 backend tests green; tsc + next build clean; predeploy backup `garmin_bot_backup_predeploy_strengthreview_20260724.db` in-container; live smoke: unauth today 401, frontend 200, backend log clean):**
 - **The editor-mode gap closed.** The daily review can now ATTACH strength placements to its proposal instead of only nudging toward chat: `REVIEW_SCHEMA.proposal` gains `strength_sessions` (planner item shape), and a proposal may be strength-only (`should_propose` true, `days: []`).
@@ -254,7 +256,7 @@ Ships as part of the plan (no approval step), same as every other authored day; 
 - **Settings UX (Will's ask):** the strength card's "Sessions per week" label gains an `InfoTip` - author mode auto-places around your runs; Garmin Coach (editor) mode proposes for approval; either way guidance-not-quota.
 - **Tests (6 new in `test_strength.py`, 21 total):** strength-only pending edit, empty-both rejection, mute set/cleared by dismissal, run-only dismissal doesn't mute, editor review attaches placements end-to-end (stubbed LLM), muted review creates no edit.
 
-**CODE-REVIEW FIXES — 2026-07-24 (post-review; 405 backend tests green; tsc clean; NOT yet deployed):**
+**CODE-REVIEW FIXES — 2026-07-24 (post-review; 405 backend tests green; tsc clean; DEPLOYED 2026-07-24 - verified `target=len(edit.strength)` in the running backend image, containers rebuilt after the latest commit):**
 - A /code-review pass (8 finder angles + verification) found two CONFIRMED bugs in the proposal-ACCEPT path, both the same root: accept-time re-validation against CURRENT state silently dropped approved sessions while returning ok.
   (1) Late accept: `apply_sessions` was windowed on `dt.date.today()`, so accepting a Tuesday proposal on Saturday dropped its Wed/Fri sessions.
   (2) Target lowered (e.g. to 0) between proposal and accept clamped the write to nothing.
