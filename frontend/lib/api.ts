@@ -36,6 +36,7 @@ import type {
   UserInfo,
   WeekSummary,
 } from "./types";
+import type { ReorderMove } from "./reorder";
 
 export class ApiError extends Error {
   status: number;
@@ -221,6 +222,14 @@ export const api = {
     request<{ ok: boolean; removed: number }>("/api/plan/unpush_week", {
       method: "POST",
       body: JSON.stringify(start ? { start } : {}),
+    }),
+
+  // Week-page drag-to-reorder: apply a whole-day content permutation. Direct
+  // edit (no coach approval); pushed days are re-pushed server-side.
+  reorderWeek: (moves: ReorderMove[]) =>
+    request<{ ok: boolean; moved: string[]; push_errors: string[] }>("/api/plan/reorder", {
+      method: "POST",
+      body: JSON.stringify({ moves }),
     }),
 
   intents: (start: string, end: string) =>

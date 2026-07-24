@@ -522,7 +522,27 @@ def build_snapshot(db: Session, user_id: int, today: dt.date) -> dict:
         )
     ]
 
+    # A recent hand-rearrangement of the week (drag-to-reorder). Surfaced so the
+    # next daily review can acknowledge it — deliberately NOT a reactive
+    # message; the coach picks it up here, in the normal daily flow.
+    recent_reorder = db.scalars(
+        select(PlanVersion)
+        .where(PlanVersion.user_id == user_id, PlanVersion.source == "reorder",
+               PlanVersion.created_at
+               >= dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=36))
+        .order_by(PlanVersion.created_at.desc())
+    ).first()
+    rearrangement = None
+    if recent_reorder is not None:
+        rearrangement = {
+            "at": recent_reorder.created_at.isoformat(),
+            "days_moved": [d["date"] for d in (recent_reorder.snapshot or [])],
+            "note": ("The athlete rearranged these days of their week by hand "
+                     "(drag-to-reorder)."),
+        }
+
     return {
+        "recent_week_rearrangement": rearrangement,
         "other_sport_days": intents,
         "today": today.isoformat(),
         "upcoming_races": races,
@@ -1075,6 +1095,123 @@ def revert_to_garmin(
             except Exception as e:  # noqa: BLE001
                 log.warning("unpush on revert failed for %s: %s", date, e)
     return reverted
+
+
+# --- week reorder: drag-to-swap whole days on the Week page ------------------
+
+class ReorderError(ValueError):
+    """A reorder request that violates the reorder contract (422 at the API)."""
+
+
+# The fields that travel when a day's content moves to another date. Date-
+# anchored facts (execution, cycle) and push state are intentionally absent —
+# push state is rebuilt by the re-push pass.
+_REORDER_CONTENT_FIELDS = (
+    "workout_type", "title", "description", "duration_min", "distance_km",
+    "target_pace", "target_hr_low", "target_hr_high", "steps", "rationale",
+)
+
+
+def reorder_week(
+    db: Session, user_id: int, moves: list[dict], today: dt.date | None = None,
+) -> dict:
+    """Apply a whole-day content permutation within one week, atomically.
+
+    `moves` is [{date, content_from}, ...]: after the reorder, `date` carries
+    the content that lived on `content_from`. The moves must form a permutation
+    of one set of dates, all today-or-future, all in one ISO week, all with a
+    planned PlanDay row. Intents and planned strength sessions ride with their
+    day. Previously pushed content is deleted from the watch and re-pushed at
+    its new date; a failed re-push leaves the day unpushed (never stale).
+    """
+    today = today or dt.date.today()
+    try:
+        pairs = [(dt.date.fromisoformat(m["date"]),
+                  dt.date.fromisoformat(m["content_from"])) for m in moves]
+    except (KeyError, TypeError, ValueError):
+        raise ReorderError("moves must be [{date, content_from}] with YYYY-MM-DD dates")
+    pairs = [(t, s) for t, s in pairs if t != s]
+    if not pairs:
+        return {"moved": [], "push_errors": []}
+
+    targets = [t for t, _ in pairs]
+    if len(set(targets)) != len(targets) or set(targets) != {s for _, s in pairs}:
+        raise ReorderError("moves must be a permutation of one set of dates")
+    if min(targets) < today:
+        raise ReorderError("past days cannot be reordered")
+    if len({t - dt.timedelta(days=t.weekday()) for t in targets}) > 1:
+        raise ReorderError("reorder is limited to a single week")
+
+    rows: dict[dt.date, PlanDay] = {}
+    for d in targets:
+        row = db.get(PlanDay, (user_id, d))
+        if row is None:
+            raise ReorderError(f"no plan on {d.isoformat()}")
+        if row.status != "planned":
+            raise ReorderError(f"{d.isoformat()} is {row.status} and cannot move")
+        rows[d] = row
+
+    # Snapshot the moving content (and its push state) before any mutation.
+    content = {d: {f: getattr(rows[d], f) for f in _REORDER_CONTENT_FIELDS}
+               for d in targets}
+    was_pushed = {d: rows[d].pushed_at is not None for d in targets}
+    intents = {d: i for d in targets
+               if (i := db.get(DayIntent, (user_id, d))) is not None}
+    strength = {d: support_mod.week_sessions(db, user_id, d, d) for d in targets}
+
+    version = PlanVersion(
+        user_id=user_id, source="reorder",
+        summary=f"Rearranged the week by hand: {len(pairs)} days moved",
+        snapshot=[plan_day_dict(rows[d]) for d in sorted(targets)])
+    db.add(version)
+    db.flush()
+
+    for t, s in pairs:
+        for f in _REORDER_CONTENT_FIELDS:
+            setattr(rows[t], f, content[s][f])
+        rows[t].version_id = version.id
+        db.add(rows[t])
+
+    # Intents and planned strength ride with their day's content. DayIntent's
+    # PK includes date, so a move is delete + re-insert.
+    for i in intents.values():
+        db.delete(i)
+    db.flush()
+    for t, s in pairs:
+        if (i := intents.get(s)) is not None:
+            db.add(DayIntent(user_id=user_id, date=t, sport=i.sport, note=i.note,
+                             duration_min=i.duration_min, effort=i.effort,
+                             source=i.source))
+        for sess in strength.get(s, []):
+            if sess.status == "planned":
+                sess.date = t
+                db.add(sess)
+    # ONE commit for the whole rearrangement (and its version row): a failure
+    # anywhere above rolls everything back — no half-swapped week, no orphaned
+    # reorder event for the coach to report on. Watch calls stay outside it.
+    db.commit()
+
+    # The watch, best-effort after the plan is safely written: delete every
+    # involved pushed workout (the old arrangement), then re-push content that
+    # was on the watch at its new date. unpush_day tolerates already-gone
+    # workouts; a failed re-push leaves the day unpushed, never stale.
+    from .garmin import push
+    push_errors: list[str] = []
+    for d in targets:
+        if rows[d].garmin_workout_id:
+            push.unpush_day(db, rows[d])
+    for t, s in pairs:
+        if was_pushed[s] and rows[t].workout_type in push.PUSHABLE_TYPES:
+            try:
+                push.push_day(db, rows[t])
+            except Exception as e:  # noqa: BLE001
+                push_errors.append(f"{t.isoformat()}: {e}")
+                log.warning("re-push after reorder failed for %s: %s", t, e)
+
+    log.info("week reordered (user %s): %d days moved, %d re-push errors",
+             user_id, len(pairs), len(push_errors))
+    return {"moved": [t.isoformat() for t in sorted(targets)],
+            "push_errors": push_errors}
 
 
 # --- daily review (editor-above-the-DSW) -------------------------------------

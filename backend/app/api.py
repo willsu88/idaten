@@ -780,6 +780,31 @@ def plan_unpush_week(body: WeekBody, db: Session = Depends(get_db),
     return {"ok": True, "removed": removed}
 
 
+class ReorderMove(BaseModel):
+    date: str          # the day that will carry the moved content
+    content_from: str  # the day whose content moves there
+
+
+class ReorderBody(BaseModel):
+    moves: list[ReorderMove]
+
+
+@router.post("/plan/reorder")
+def plan_reorder(body: ReorderBody, db: Session = Depends(get_db),
+                 user: User = Depends(current_user)):
+    """Apply the Week page's drag-to-reorder: a whole-day content permutation.
+
+    Direct edit by design (no PendingEdit approval) — the user has final
+    authority over their own schedule; the coach picks the rearrangement up as
+    context in the next daily review instead of reacting immediately."""
+    try:
+        result = planner_mod.reorder_week(
+            db, user.id, [m.model_dump() for m in body.moves])
+    except planner_mod.ReorderError as e:
+        raise HTTPException(422, str(e))
+    return {"ok": True, **result}
+
+
 # --- races ---------------------------------------------------------------------
 
 class RaceBody(BaseModel):

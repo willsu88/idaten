@@ -9,10 +9,12 @@ import {
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
+  ListOrdered,
   MessageSquare,
   MoreHorizontal,
   Trash2,
   Watch,
+  X,
 } from "lucide-react";
 import type { DayIntent, PlanDay, WeekSummary } from "@/lib/types";
 import { api, safe } from "@/lib/api";
@@ -32,6 +34,8 @@ import { CyclePhaseChip } from "@/components/cycle-phase-chip";
 import { PushButton } from "@/components/workout-card";
 import { ScoreRing } from "@/components/execution-score";
 import { WeekStrip, WeekSummaryLine } from "@/components/week-strip";
+import { WeekReorderList } from "@/components/week-reorder";
+import { buildMoves, hasChanges, initialAssignment, isLockedDay } from "@/lib/reorder";
 import { RevertButton } from "@/components/revert-button";
 import { IntentChip, OtherSportButton } from "@/components/intent-dialog";
 import { StrengthChip, SupportChip } from "@/components/support-session-card";
@@ -473,6 +477,54 @@ function WeekPageInner() {
   const byDate = new Map((days ?? []).map((d) => [d.date, d]));
   const slots = weekDates(weekStart);
 
+  // --- edit mode: drag whole days to swap them (spec: week-reorder) ---------
+  // Drags stage locally in `assignment` (slot -> source date); nothing persists
+  // until Done sends one atomic reorder. Cancel/Esc discards. The accordion
+  // `overrides` are untouched, so expansion state survives an edit session.
+  const [editing, setEditing] = React.useState(false);
+  const [assignment, setAssignment] = React.useState<string[]>([]);
+  const [savingOrder, setSavingOrder] = React.useState(false);
+  const movableCount = slots.filter((d) => !isLockedDay(byDate.get(d), d, today)).length;
+
+  const startEditing = () => {
+    setAssignment(initialAssignment(slots));
+    setEditing(true);
+  };
+  const cancelEditing = React.useCallback(() => setEditing(false), []);
+  const finishEditing = async () => {
+    if (!hasChanges(slots, assignment)) {
+      setEditing(false);
+      return;
+    }
+    setSavingOrder(true);
+    try {
+      const res = await api.reorderWeek(buildMoves(slots, assignment));
+      toast(
+        res.push_errors.length > 0
+          ? "Week reordered — some workouts couldn't be re-sent to the watch"
+          : "Week reordered",
+        res.push_errors.length > 0 ? "error" : undefined,
+      );
+      setEditing(false);
+      load();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Reorder failed — is the backend running?", "error");
+    } finally {
+      setSavingOrder(false);
+    }
+  };
+  // Esc = cancel (but never mid-save — Done in flight must finish honestly),
+  // and paging to another week abandons the edit session.
+  React.useEffect(() => {
+    if (!editing || savingOrder) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") cancelEditing();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editing, savingOrder, cancelEditing]);
+  React.useEffect(() => setEditing(false), [weekStart]);
+
   return (
     <div>
       <PageHeader
@@ -525,8 +577,14 @@ function WeekPageInner() {
       </div>
 
       {/* Week actions — a dedicated left-aligned toolbar so they don't stagger
-          in the header. Primary (ask the coach) first, then watch/plan management. */}
+          in the header. Primary (ask the coach) first, then watch/plan management.
+          In edit mode the left group yields to a drag hint, and on the right the
+          Edit button flips in place to Done (one control governs the mode). */}
       <div className="mb-6 flex flex-wrap items-center gap-2">
+        {editing ? (
+          <p className="text-xs text-muted-foreground">Drag two days to swap them</p>
+        ) : (
+        <>
         <Button
           variant="outline"
           size="sm"
@@ -613,21 +671,44 @@ function WeekPageInner() {
             )}
           </DropdownMenu>
         </div>
+        </>
+        )}
 
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={toggleAll}
-          className="ml-auto"
-          aria-label={allExpanded ? "Collapse all days" : "Expand all days"}
-        >
-          {allExpanded ? (
-            <ChevronsDownUp className="h-3.5 w-3.5" />
-          ) : (
-            <ChevronsUpDown className="h-3.5 w-3.5" />
+        <div className="ml-auto flex items-center gap-1">
+          {editing && (
+            <Button variant="outline" size="sm" onClick={cancelEditing} disabled={savingOrder}>
+              <X className="h-3.5 w-3.5" />
+              Cancel
+            </Button>
           )}
-          {allExpanded ? "Collapse all" : "Expand all"}
-        </Button>
+          {/* The Edit control itself flips to Done while editing. Reorder needs
+              two movable (future, planned) days to mean anything. */}
+          <Button
+            variant={editing ? "default" : "ghost"}
+            size="sm"
+            onClick={editing ? finishEditing : startEditing}
+            disabled={editing ? savingOrder : movableCount < 2}
+            aria-label={editing ? "Finish reordering" : "Reorder week"}
+          >
+            {editing ? <Check className="h-3.5 w-3.5" /> : <ListOrdered className="h-3.5 w-3.5" />}
+            {editing ? (savingOrder ? "Saving…" : "Done") : "Edit"}
+          </Button>
+          {!editing && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleAll}
+              aria-label={allExpanded ? "Collapse all days" : "Expand all days"}
+            >
+              {allExpanded ? (
+                <ChevronsDownUp className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronsUpDown className="h-3.5 w-3.5" />
+              )}
+              {allExpanded ? "Collapse all" : "Expand all"}
+            </Button>
+          )}
+        </div>
       </div>
 
       <CoachHint page="week" />
@@ -675,6 +756,17 @@ function WeekPageInner() {
             Couldn&apos;t load the plan — is the backend running?
           </CardContent>
         </Card>
+      ) : editing ? (
+        // Edit mode: compact swap-list inside the dotted frame. Cards are
+        // forced to their one-line form; normal rows (and their expansion
+        // state) come back untouched on exit.
+        <WeekReorderList
+          slots={slots}
+          byDate={byDate}
+          assignment={assignment}
+          onAssignmentChange={setAssignment}
+          today={today}
+        />
       ) : (
         <div className="space-y-2">
           {slots.map((date) => {
