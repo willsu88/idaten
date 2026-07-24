@@ -3,8 +3,9 @@
 # Start Garmin Bot for remote access via a Cloudflare tunnel.
 #
 #   1. Keeps the Mac awake            (caffeinate)
-#   2. Brings up the Docker stack     (docker compose up -d --build)
-#   3. Starts a Cloudflare tunnel     (see the two modes below)
+#   2. Runs the test gate             (backend pytest + frontend vitest; SKIP_TESTS=1 to bypass)
+#   3. Brings up the Docker stack     (docker compose up -d --build)
+#   4. Starts a Cloudflare tunnel     (see the two modes below)
 #
 # Two tunnel modes:
 #
@@ -56,11 +57,28 @@ else
   log "caffeinate started (pid $(cat "$PID_FILE")) - Mac will not idle-sleep"
 fi
 
-# 2. Docker stack -------------------------------------------------------------
+# 2. Test gate ----------------------------------------------------------------
+# This script is the one chokepoint every change passes through, so it is this
+# repo's CI: a red test can never reach the live app. Rationale + trade-offs:
+# docs/adr/0001-start-sh-is-the-test-gate.md. Skip only for a deliberate
+# hotfix with SKIP_TESTS=1 ./start.sh.
+if [[ "${SKIP_TESTS:-0}" == "1" ]]; then
+  log "SKIP_TESTS=1 - skipping the test gate (hotfix mode)"
+else
+  log "test gate: backend pytest..."
+  # `python -m pytest`, not `.venv/bin/pytest`: console-script shebangs bake
+  # the venv's absolute path and break if the repo directory is ever renamed.
+  (cd "$ROOT/backend" && .venv/bin/python -m pytest -q)
+  log "test gate: frontend vitest..."
+  (cd "$ROOT/frontend" && npm test --silent)
+  log "test gate passed"
+fi
+
+# 3. Docker stack -------------------------------------------------------------
 log "building + starting Docker stack..."
 "$DOCKER" compose up -d --build
 
-# 3. Cloudflare tunnel --------------------------------------------------------
+# 4. Cloudflare tunnel --------------------------------------------------------
 case "$TUNNEL" in
 
   named)

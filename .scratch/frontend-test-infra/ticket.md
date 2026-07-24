@@ -1,31 +1,30 @@
 ---
 title: Stand up frontend test infrastructure
-labels: [needs-grilling]
-status: open
+labels: []
+status: done
 created: 2026-07-24
 blocked-by: []
 ---
 
 # Stand up frontend test infrastructure
 
-## Idea
+## Design (settled in the 2026-07-24 grilling session)
 
-The frontend (Next.js 14, React 18, TypeScript) has zero test infrastructure: no runner, no test script, no test dependencies, no test files.
-All ~50 automated tests in the repo are backend pytest.
-Stand up a minimal frontend testing stack so frontend behavior can be tested going forward.
+1. **Runner: Vitest**, and nothing else.
+   jsdom and Testing Library are explicitly deferred until a ticket first needs a component test (add `// @vitest-environment jsdom` per-file then).
+2. **Default test layer: pure logic.**
+   Tests target pure modules in `frontend/lib/`; components stay thin and untested for now.
+3. **E2E: out of scope, no Playwright ticket filed.**
+   The revisit trigger is a real regression escaping manual live-app testing - that event names the first flow worth automating.
+4. **Layout: colocated** - `foo.test.ts` next to `foo.ts`.
+5. **Enforcement: `./start.sh` is the gate** (see `docs/adr/0001-start-sh-is-the-test-gate.md`).
+   It runs backend pytest and frontend `vitest run` before `docker compose up --build` and aborts on failure; `SKIP_TESTS=1` bypasses for hotfixes.
+   No GitHub Actions *as the gate*; a test-only Actions workflow for commit hygiene is `.scratch/ci-test-workflow`.
+6. **First coverage: `frontend/lib/reorder.ts`, thoroughly.**
+   Other `lib/` modules get tests when next touched.
 
-## Why now
+## Shipped
 
-The week-reorder feature (see .scratch/week-reorder/spec.md) introduces real client-side logic worth testing: a staging reducer (drags mutate local state, Cancel/Esc restore, Done emits one batch request), locked-card exclusion from sorting, and a quality-day adjacency heuristic.
-That spec deliberately keeps those as pure, importable modules so this ticket can cover them without refactoring.
-
-## Not yet designed
-
-This ticket is NOT ready for an agent.
-Run a /grill-with-docs session first to settle at least:
-
-- Runner and stack choice (leading candidate from prior discussion: Vitest + jsdom + Testing Library; Playwright for E2E is a separate question).
-- What layer to test by default: pure logic only, component behavior, or both.
-- Whether real-browser E2E belongs in scope now or later.
-- Test file location convention (colocated vs __tests__) and CI wiring.
-- First coverage targets (week-reorder staging logic and adjacency heuristic are the natural candidates).
+- `frontend/vitest.config.ts` (node environment, `@` alias mirroring tsconfig) and `npm test` → `vitest run`.
+- `frontend/lib/reorder.test.ts`: 17 tests covering `isLockedDay` boundaries, `swapSlots` no-op cases (locked, out-of-range, self-swap), `hasChanges`/`buildMoves` (identity → zero moves, swap → exactly two moves, undo → zero), and `adjacentQualityDates` (separated/pair/triple, staged-arrangement adjacency, missing-day handling).
+- `start.sh` test gate running backend pytest (via `.venv/bin/python -m pytest`, shebang-proof) and frontend vitest.
