@@ -178,7 +178,8 @@ def test_chat_endpoint_expands_server_side(db, client, monkeypatch):
     assert r.status_code == 200
     types = [json.loads(line[6:])["type"]
              for line in r.text.splitlines() if line.startswith("data: ")]
-    assert types[0] == "session" and types[-1] == "done"
+    # The stream ends done -> quota (post-send count for the "N left" hint).
+    assert types[0] == "session" and types[-2:] == ["done", "quota"]
 
     session_id = db.scalars(select(ChatMessage.session_id)).first()
     h = client.get(f"/api/chat/history?session_id={session_id}").json()

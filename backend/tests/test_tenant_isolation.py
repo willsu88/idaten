@@ -128,5 +128,5 @@ def test_chat_history_scoped_by_user(db, client):
     db.commit()
 
     _login(client, "gf", "secret2")
-    assert client.get("/api/chat/sessions").json() == []
+    assert client.get("/api/chat/sessions").json()["sessions"] == []
     assert client.get("/api/chat/history", params={"session_id": "s1"}).json() == []

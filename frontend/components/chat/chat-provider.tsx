@@ -7,7 +7,7 @@
 
 import * as React from "react";
 import { usePathname } from "next/navigation";
-import type { ChatSession, PendingEdit } from "@/lib/types";
+import type { ChatQuota, ChatSession, PendingEdit } from "@/lib/types";
 import { api, ApiError, streamChat } from "@/lib/api";
 import { coachFirstName, useCoach } from "@/components/coach-provider";
 
@@ -53,6 +53,9 @@ function firstToken(text: string): string {
 
 interface ChatContextValue {
   sessions: ChatSession[];
+  /** Daily chat message quota (chat messages only; cap null = unlimited).
+   *  null until the first sessions load. */
+  quota: ChatQuota | null;
   sessionId: string | undefined;
   items: ThreadItem[];
   streaming: boolean;
@@ -100,6 +103,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const persona = useCoach();
   const [sessions, setSessions] = React.useState<ChatSession[]>([]);
+  const [quota, setQuota] = React.useState<ChatQuota | null>(null);
   const [sessionId, setSessionId] = React.useState<string | undefined>(undefined);
   const [items, setItems] = React.useState<ThreadItem[]>([]);
   const [input, setInput] = React.useState("");
@@ -130,7 +134,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const loadSessions = React.useCallback(async () => {
     try {
-      setSessions(await api.chatSessions());
+      const res = await api.chatSessions();
+      setSessions(res.sessions);
+      setQuota(res.quota);
     } catch {
       setSessions([]);
     }
@@ -290,6 +296,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
                 break;
               case "done":
                 break;
+              case "quota":
+                setQuota({ used: event.used, cap: event.cap });
+                break;
             }
           },
         );
@@ -358,6 +367,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const value: ChatContextValue = {
     sessions,
+    quota,
     sessionId,
     items,
     streaming,

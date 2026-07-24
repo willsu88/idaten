@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import (crypto, execution, feedback as feedback_mod, metrics,
+from . import (chat_quota, crypto, execution, feedback as feedback_mod, metrics,
                niggles as niggles_mod, rate_limit, races as races_mod, scheduler,
                support as support_mod)
 from .config import config
@@ -172,12 +172,20 @@ def usage_summary(days: int = 30, db: Session = Depends(get_db),
         }
 
     total = shape(db.execute(select(*aggs).where(LlmUsage.ts >= since)).one())
-    names = {u.id: (u.display_name or u.username) for u in db.scalars(select(User)).all()}
+    users = db.scalars(select(User)).all()
+    names = {u.id: (u.display_name or u.username) for u in users}
+    usage_rows = {r[0]: shape(r[1:]) for r in db.execute(
+        select(LlmUsage.user_id, *aggs).where(LlmUsage.ts >= since)
+        .group_by(LlmUsage.user_id)).all()}
+    zero = shape((0, 0, 0, 0, 0, 0.0))
+    # Every account gets a row (zero-filled without usage) so its chat cap is
+    # always visible and editable; msgs_today counts chat messages, NOT the
+    # LLM calls in the "calls" column — one message fans out into several.
     by_user = sorted(
-        [{"user_id": r[0], "name": names.get(r[0], f"user {r[0]}"), **shape(r[1:])}
-         for r in db.execute(
-             select(LlmUsage.user_id, *aggs).where(LlmUsage.ts >= since)
-             .group_by(LlmUsage.user_id)).all()],
+        [{"user_id": u.id, "name": names[u.id], **usage_rows.get(u.id, zero),
+          "msgs_today": chat_quota.used_today(db, u.id),
+          "chat_daily_cap": chat_quota.get_cap(db, u.id)}
+         for u in users],
         key=lambda x: x["cost_usd"], reverse=True)
     by_call_site = sorted(
         [{"call_site": r[0], **shape(r[1:])}
@@ -205,6 +213,24 @@ def create_reset_link(user_id: int, db: Session = Depends(get_db),
         raise HTTPException(404, "no such user")
     token, row = create_invite_token(db, admin.id, "password_reset", user_id=target.id)
     return {"path": f"/invite/{token}", "expires_at": row.expires_at.isoformat()}
+
+
+class ChatCapBody(BaseModel):
+    # None = unlimited. The default (8/day) applies until a cap is ever set.
+    cap: int | None = Field(None, ge=0, le=chat_quota.CAP_MAX)
+
+
+@auth_router.put("/users/{user_id}/chat_cap")
+def set_chat_cap(user_id: int, body: ChatCapBody, db: Session = Depends(get_db),
+                 admin: User = Depends(admin_user)):
+    """Set an account's daily chat message limit (chat messages only — never
+    the system-initiated coach features). Applies to any account, admin's own
+    included: this page is the escape hatch, so self-capping can't lock out."""
+    if db.get(User, user_id) is None:
+        raise HTTPException(404, "no such user")
+    chat_quota.set_cap(db, user_id, body.cap)
+    return {"user_id": user_id, "chat_daily_cap": body.cap,
+            "msgs_today": chat_quota.used_today(db, user_id)}
 
 
 @auth_router.delete("/users/{user_id}")
@@ -1883,11 +1909,14 @@ def chat(body: ChatBody, db: Session = Depends(get_db),
     from . import rate_limit
     from .chat.shortcuts import expand
 
-    # Slot first, quota second: a send refused because a stream is running must
-    # not burn the member's daily message quota (check_message records on pass).
+    # Slot first, guards second: a send refused because a stream is running must
+    # not count against the burst guard (check_message records on pass). The
+    # daily cap can't be burned by a refused send either — it counts persisted
+    # chat_messages rows, and a refused send never reaches run_chat.
     gen = rate_limit.acquire_stream(user.id)
     try:
         rate_limit.check_message(user, body.message)  # 429/400 before any LLM spend
+        chat_quota.check(db, user)  # daily cap (admin-set policy, DB-backed)
         # The user's message is displayed/persisted verbatim; shortcut expansion and
         # the context-date prefix only enter the model-facing history (llm_text).
         llm_text, is_shortcut = expand(body.message)
@@ -1904,6 +1933,9 @@ def chat(body: ChatBody, db: Session = Depends(get_db),
                                   kind="shortcut" if is_shortcut else "text",
                                   stream_gen=gen):
                 yield f"data: {json.dumps(event)}\n\n"
+            # Post-send count, so the client can show "N left today" (and warn
+            # near the cap) without a refetch.
+            yield f"data: {json.dumps({'type': 'quota', **chat_quota.quota_dict(db, user.id)})}\n\n"
         finally:
             rate_limit.release_stream(user.id, gen)
 
@@ -1937,7 +1969,9 @@ def chat_sessions(db: Session = Depends(get_db), user: User = Depends(current_us
                 "created_at": created_at.isoformat(),
                 "title": (content or "")[:60] or "New chat",
             }
-    return sorted(sessions.values(), key=lambda s: s["created_at"], reverse=True)
+    return {"sessions": sorted(sessions.values(),
+                               key=lambda s: s["created_at"], reverse=True),
+            "quota": chat_quota.quota_dict(db, user.id)}
 
 
 @router.get("/chat/history")

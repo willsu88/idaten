@@ -75,6 +75,112 @@ function UsageTable({
   );
 }
 
+/** Inline editor for one member's daily chat cap. Blank (or "∞") = unlimited. */
+function CapEditor({
+  value,
+  onSave,
+}: {
+  value: number | null;
+  onSave: (cap: number | null) => void;
+}) {
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState("");
+
+  const commit = () => {
+    setEditing(false);
+    const text = draft.trim();
+    if (text === "" || text === "∞") {
+      if (value !== null) onSave(null);
+      return;
+    }
+    const n = Number(text);
+    if (!Number.isInteger(n) || n < 0 || n > 1000 || n === value) return;
+    onSave(n);
+  };
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setDraft(value == null ? "" : String(value));
+          setEditing(true);
+        }}
+        className="rounded-md px-2 py-0.5 tabular-nums underline decoration-dotted underline-offset-2 hover:bg-muted"
+        aria-label="Edit daily chat cap"
+      >
+        {value == null ? "∞" : value}
+      </button>
+    );
+  }
+  return (
+    <input
+      autoFocus
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit();
+        if (e.key === "Escape") setEditing(false);
+      }}
+      inputMode="numeric"
+      placeholder="∞"
+      className="w-14 rounded-md border border-border bg-background px-1.5 py-0.5 text-right text-sm tabular-nums outline-none focus:ring-1 focus:ring-ring"
+    />
+  );
+}
+
+/** The member table: usage plus the daily chat cap (chat messages only). */
+function MemberTable({
+  rows,
+  onSetCap,
+}: {
+  rows: UsageSummary["by_user"];
+  onSetCap: (userId: number, cap: number | null) => void;
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border text-left text-xs text-muted-foreground">
+            <th className="py-2 pr-3 font-medium">Member</th>
+            <th className="py-2 px-3 text-right font-medium">Calls</th>
+            <th className="py-2 px-3 text-right font-medium">In / Out</th>
+            <th className="py-2 px-3 text-right font-medium">Cache</th>
+            <th className="py-2 px-3 text-right font-medium">Cost</th>
+            <th className="py-2 px-3 text-right font-medium">Msgs today</th>
+            <th className="py-2 pl-3 text-right font-medium">Daily cap</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.user_id} className="border-b border-border/50 last:border-0">
+              <td className="py-2 pr-3 font-medium">{r.name}</td>
+              <td className="py-2 px-3 text-right tabular-nums">{r.calls}</td>
+              <td className="py-2 px-3 text-right tabular-nums text-muted-foreground">
+                {fmtTokens(r.input_tokens)} / {fmtTokens(r.output_tokens)}
+              </td>
+              <td className="py-2 px-3 text-right tabular-nums text-muted-foreground">
+                {r.cache_hit_pct}%
+              </td>
+              <td className="py-2 px-3 text-right font-semibold tabular-nums">
+                {fmtCost(r.cost_usd)}
+              </td>
+              <td className="py-2 px-3 text-right tabular-nums text-muted-foreground">
+                {r.msgs_today}
+                {r.chat_daily_cap != null && ` / ${r.chat_daily_cap}`}
+              </td>
+              <td className="py-2 pl-3 text-right">
+                <CapEditor value={r.chat_daily_cap} onSave={(cap) => onSetCap(r.user_id, cap)} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function AdminLlmCard() {
   const [provider, setProvider] = React.useState<Provider | null>(null);
   const [usage, setUsage] = React.useState<UsageSummary | null>(null);
@@ -98,6 +204,25 @@ export function AdminLlmCard() {
       .catch(() => {
         setProvider(previous);
         toast("Couldn't change the provider - try again.", "error");
+      });
+  };
+
+  const setCap = (userId: number, cap: number | null) => {
+    const previous = usage;
+    setUsage((u) =>
+      u && {
+        ...u,
+        by_user: u.by_user.map((r) =>
+          r.user_id === userId ? { ...r, chat_daily_cap: cap } : r,
+        ),
+      },
+    ); // optimistic
+    api
+      .setChatCap(userId, cap)
+      .then(() => toast(cap == null ? "Chat cap removed" : `Chat cap set to ${cap}/day`))
+      .catch(() => {
+        setUsage(previous);
+        toast("Couldn't update the chat cap - try again.", "error");
       });
   };
 
@@ -164,10 +289,11 @@ export function AdminLlmCard() {
 
               <div>
                 <p className="mb-2 text-sm font-medium">By member</p>
-                <UsageTable
-                  head="Member"
-                  rows={usage.by_user.map((r) => ({ ...r, key: String(r.user_id), label: r.name }))}
-                />
+                <MemberTable rows={usage.by_user} onSetCap={setCap} />
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  The daily cap limits chat messages only - daily reviews, plans, and run
+                  analysis are never blocked. One message can fan out into several calls.
+                </p>
               </div>
             </div>
           )}

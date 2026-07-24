@@ -1,8 +1,9 @@
-"""Chat rate limiting — accident protection at household scale.
+"""Chat rate limiting — in-memory accident guards, not policy.
 
-Every chat turn costs real LLM API money (up to 8 tool rounds), so non-admin
-members get modest quotas; the admin (whose API key it is) is exempt from the
-counts. One concurrent stream per user applies to everyone — that's about
+The burst guard (a few messages per 5 minutes) catches runaway clients; the
+admin, whose API key it is, is exempt. The *daily* message cap is policy, not
+plumbing: it lives in chat_quota (DB-backed, admin-configurable, applies to
+everyone). One concurrent stream per user applies to everyone — that's about
 correctness, not spend. In-memory on purpose: single process, two users.
 """
 
@@ -17,8 +18,7 @@ from fastapi import HTTPException
 from .models import User
 
 WINDOW_S = 5 * 60
-WINDOW_LIMIT = 5      # messages per 5 minutes (non-admin)
-DAY_LIMIT = 15        # messages per rolling 24 h (non-admin)
+WINDOW_LIMIT = 5      # messages per 5 minutes (non-admin burst guard)
 MAX_MESSAGE_CHARS = 2000
 
 # Login brute-force throttle: after LOGIN_MAX failures in LOGIN_WINDOW_S, further
@@ -80,13 +80,9 @@ def check_message(user: User, message: str) -> None:
     now = clock()
     with _lock:
         q = _sent[user.id]
-        while q and now - q[0] > 24 * 3600:
+        while q and now - q[0] > WINDOW_S:
             q.popleft()
-        if len(q) >= DAY_LIMIT:
-            raise HTTPException(
-                429, "You've reached today's chat limit (15 messages). "
-                     "The coach will be back tomorrow.")
-        if sum(1 for t in q if now - t <= WINDOW_S) >= WINDOW_LIMIT:
+        if len(q) >= WINDOW_LIMIT:
             raise HTTPException(
                 429, "Give the coach a breather — a few messages every 5 minutes "
                      "is the limit. Try again shortly.")

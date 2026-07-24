@@ -1639,3 +1639,25 @@ Closes the editor-mode gap: the daily review can now propose strength placements
 - `create_pending_edit` accepts the placements and validates them against the weekly target; they land on the same `PendingEdit.strength` field, so the existing proposal card renders them with zero UI changes.
 - Anti-nag guard (enforced in code, not just prompt): a strength-carrying proposal dismissed this week mutes review placements until next week; chat can still propose any time. Run-only dismissals don't mute.
 - Settings: the strength card's "Sessions per week" gains an InfoTip explaining the author/editor difference (auto-placed vs proposed-for-approval) and the guidance-not-quota posture.
+
+## v1.33 - per-user daily chat message cap (admin-configurable)
+
+The daily chat limit becomes admin-set policy: everyone (admin included) has a cap on user-sent chat messages, default 8 per calendar day, resetting at local midnight (app timezone).
+It counts chat messages only - never the system-initiated coach features (review, plan, execution analysis), and never the individual LLM calls a message fans out into.
+The old hardcoded 15-per-rolling-24h member limit is gone; the 5-per-5-minutes burst guard stays (non-admin, in-memory, not configurable).
+Source of truth is the `chat_messages` table, so the count survives restarts and every surface reports the same number.
+
+### Endpoints
+
+- `GET /api/chat/sessions` shape changed: `{ sessions: Array<{ id, created_at, title }>, quota: { used: number, cap: number | null } }` (`cap` null = unlimited).
+- `POST /api/chat`: 429 with a user-ready `detail` when today's cap is used up (before any LLM spend, before the stream starts).
+  The SSE stream gains a final event after `done`/`stopped`: `{ "type": "quota", "used": number, "cap": number | null }` - the post-send count, so the client updates its hint without refetching.
+- `PUT /api/auth/users/{id}/chat_cap` (admin) body `{ cap: number | null }` (0-1000; null = unlimited; 0 = chat disabled for that account) → `{ user_id, chat_daily_cap, msgs_today }`.
+- `GET /api/auth/usage`: `by_user` now has a row for EVERY account (zero-filled without usage) and each row gains `msgs_today` (chat messages today) and `chat_daily_cap` (number | null).
+  `msgs_today` counts messages, `calls` counts LLM calls - do not conflate them in UI copy.
+
+### UI
+
+- Admin "By member" table: two new columns - "Msgs today" (`used / cap`) and an editable "Daily cap" (click to edit; blank or `∞` = unlimited), with a caption noting the cap covers chat messages only.
+- Chat composer: quiet "N coach messages left today" hint at <= 2 remaining; at the cap the composer disables itself with "Daily limit reached - the coach is back at midnight".
+- The cap is stored as a server-owned settings key: `GET/PUT /api/settings` can neither read nor write it.

@@ -146,6 +146,7 @@ export function ChatConversation({
     send,
     openSession,
     placeholder,
+    quota,
   } = useChat();
   const persona = useCoach();
   const bottomRef = React.useRef<HTMLDivElement>(null);
@@ -174,6 +175,11 @@ export function ChatConversation({
 
   const showSlashMenu = input.startsWith("/") && !input.includes(" ");
   const slashMatches = SLASH_SHORTCUTS.filter((s) => s.command.startsWith(input));
+
+  // Daily chat cap: quiet until nearly out, then a hint; at the cap the
+  // composer explains itself instead of letting a send bounce off a 429.
+  const remaining = quota && quota.cap != null ? Math.max(0, quota.cap - quota.used) : null;
+  const quotaExhausted = remaining === 0;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -361,6 +367,18 @@ export function ChatConversation({
             ))}
           </div>
         )}
+        {quotaExhausted ? (
+          <p className="mb-1.5 text-xs text-muted-foreground">
+            Daily limit reached ({quota?.cap} coach messages) - the coach is back at midnight.
+          </p>
+        ) : (
+          remaining != null &&
+          remaining <= 2 && (
+            <p className="mb-1.5 text-xs text-muted-foreground">
+              {remaining} coach {remaining === 1 ? "message" : "messages"} left today.
+            </p>
+          )
+        )}
         {contextDate && (
           <p className="mb-1.5 text-xs text-muted-foreground">
             Context: workout on <span className="font-medium">{contextDate}</span>{" "}
@@ -381,7 +399,8 @@ export function ChatConversation({
             // placeholder:* — a too-long (transient) placeholder ellipsizes on
             // one line instead of wrapping into the clipped second row.
             className="min-h-[44px] resize-none placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap"
-            placeholder={placeholder}
+            placeholder={quotaExhausted ? "Daily limit reached - back at midnight" : placeholder}
+            disabled={quotaExhausted}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
@@ -401,7 +420,12 @@ export function ChatConversation({
               <Square className="h-3.5 w-3.5" fill="currentColor" />
             </Button>
           ) : (
-            <Button size="icon" onClick={() => send()} disabled={!input.trim()} aria-label="Send">
+            <Button
+              size="icon"
+              onClick={() => send()}
+              disabled={!input.trim() || quotaExhausted}
+              aria-label="Send"
+            >
               <SendHorizonal className="h-4 w-4" />
             </Button>
           )}

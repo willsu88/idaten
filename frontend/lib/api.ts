@@ -7,7 +7,7 @@ import type {
   Analytics,
   ChatEvent,
   ChatMessage,
-  ChatSession,
+  ChatSessionsResponse,
   CourseTrack,
   CycleCalendarDay,
   DailyReview,
@@ -456,7 +456,14 @@ export const api = {
   dismissEdit: (id: number) =>
     request<{ ok: true }>(`/api/edits/${id}/dismiss`, { method: "POST" }),
 
-  chatSessions: () => request<ChatSession[]>("/api/chat/sessions"),
+  chatSessions: () => request<ChatSessionsResponse>("/api/chat/sessions"),
+
+  /** Admin: set an account's daily chat message cap (null = unlimited). */
+  setChatCap: (userId: number, cap: number | null) =>
+    request<{ user_id: number; chat_daily_cap: number | null; msgs_today: number }>(
+      `/api/auth/users/${userId}/chat_cap`,
+      { method: "PUT", body: JSON.stringify({ cap }) },
+    ),
 
   chatHistory: (sessionId: string) =>
     request<ChatMessage[]>(`/api/chat/history?session_id=${encodeURIComponent(sessionId)}`),

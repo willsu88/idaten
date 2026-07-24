@@ -30,7 +30,9 @@ def _tick(start=0.0):
     return clock, state
 
 
-def test_window_and_day_limits_for_members(db):
+def test_burst_guard_limits_members(db):
+    # The daily cap moved to chat_quota (DB-backed, admin-set); rate_limit
+    # keeps only the 5-per-5-minutes burst guard. See test_chat_quota.py.
     member = make_user(db, "gf", "secret2")  # is_admin False
     clock, state = _tick()
     rate_limit.clock = clock
@@ -41,28 +43,16 @@ def test_window_and_day_limits_for_members(db):
         rate_limit.check_message(member, "hi")
     assert e.value.status_code == 429 and "5 minutes" in e.value.detail
 
-    # Window clears after 5 minutes; day limit still applies
-    sent = rate_limit.WINDOW_LIMIT
-    while sent < rate_limit.DAY_LIMIT:
-        state["t"] += rate_limit.WINDOW_S + 1
-        for _ in range(min(rate_limit.WINDOW_LIMIT, rate_limit.DAY_LIMIT - sent)):
-            rate_limit.check_message(member, "hi")
-            sent += 1
+    # Window clears after 5 minutes
     state["t"] += rate_limit.WINDOW_S + 1
-    with pytest.raises(HTTPException) as e:
-        rate_limit.check_message(member, "hi")
-    assert e.value.status_code == 429 and "today" in e.value.detail.lower()
-
-    # ...and resets after 24 h
-    state["t"] += 24 * 3600 + 1
     rate_limit.check_message(member, "hi")
 
 
-def test_admin_is_exempt_from_counts(db):
+def test_admin_is_exempt_from_burst_guard(db):
     admin = make_user(db, "will")
     admin.is_admin = True
     db.commit()
-    for _ in range(rate_limit.DAY_LIMIT * 3):
+    for _ in range(rate_limit.WINDOW_LIMIT * 3):
         rate_limit.check_message(admin, "hi")
 
 

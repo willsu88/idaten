@@ -608,7 +608,17 @@ export interface UsageSummary {
   days: number;
   since: string;
   total: UsageBucket;
-  by_user: Array<UsageBucket & { user_id: number; name: string }>;
+  // Every account gets a row (zero-filled without usage). msgs_today counts
+  // chat MESSAGES (the unit the daily cap limits), not the LLM calls in
+  // `calls` — one message can fan out into several calls.
+  by_user: Array<
+    UsageBucket & {
+      user_id: number;
+      name: string;
+      msgs_today: number;
+      chat_daily_cap: number | null; // null = unlimited
+    }
+  >;
   by_call_site: Array<UsageBucket & { call_site: string }>;
 }
 
@@ -630,6 +640,20 @@ export interface ChatSession {
   title: string;
 }
 
+/** Daily chat message quota: user-sent messages only, resets at local midnight.
+ *  cap null = unlimited. One message may fan out into several LLM calls — those
+ *  never count. */
+export interface ChatQuota {
+  used: number;
+  cap: number | null;
+}
+
+/** GET /api/chat/sessions */
+export interface ChatSessionsResponse {
+  sessions: ChatSession[];
+  quota: ChatQuota;
+}
+
 export interface ChatMessage {
   role: "user" | "assistant";
   kind: "text" | "edit_proposed" | "shortcut"; // "shortcut": user message that matched a slash command
@@ -645,4 +669,7 @@ export type ChatEvent =
   | { type: "edit_proposed"; edit: PendingEdit }
   | { type: "done" }
   | { type: "stopped" } // terminal, like "done": the server stopped the stream on request
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  // Post-send count, after "done"/"stopped" — lets the client refresh its
+  // "N left today" hint without refetching sessions.
+  | { type: "quota"; used: number; cap: number | null };
