@@ -83,11 +83,11 @@ def _eager_review(db: Session, user: User, today: dt.date) -> None:
 
 def _weekly_done(db: Session, user_id: int, today: dt.date) -> bool:
     """Off Mondays there is nothing eager to do, so the weekly counts as done.
-    On Mondays: done once the closed week's row exists, or when the member's
-    summaries are disabled (writing nothing IS the finished state then)."""
+    On Mondays: done once the closed week's row exists, or when the operator
+    has summaries switched off (writing nothing IS the finished state then)."""
     if today.weekday() != 0:
         return True
-    if not weekly.summaries_enabled(db, user_id):
+    if not weekly.summaries_enabled(db):
         return True
     from .models import WeeklySummary
     return db.get(WeeklySummary, (user_id, weekly.last_closed_week(today))) is not None

@@ -1,11 +1,12 @@
 "use client";
 
 import * as React from "react";
-import type { Settings, UsageBucket, UsageSummary } from "@/lib/types";
+import type { CoachToggles, Settings, UsageBucket, UsageSummary } from "@/lib/types";
 import { api, safe } from "@/lib/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
 
 type Provider = NonNullable<Settings["llm_provider"]>;
@@ -184,10 +185,25 @@ function MemberTable({
   );
 }
 
+// Display copy for each instance-level call-site switch (ADR 0003).
+const TOGGLE_COPY: Array<{ key: keyof CoachToggles; label: string; detail: string }> = [
+  {
+    key: "weekly_summary",
+    label: "Week in review",
+    detail: "The coach's Monday retrospective. Weeks skipped while off stay blank.",
+  },
+  {
+    key: "execution_analysis",
+    label: "Run analysis",
+    detail: "The coach's note on a scored run. Scores themselves always compute.",
+  },
+];
+
 export function AdminLlmCard() {
   const [provider, setProvider] = React.useState<Provider | null>(null);
   const [usage, setUsage] = React.useState<UsageSummary | null>(null);
   const [usageError, setUsageError] = React.useState(false);
+  const [toggles, setToggles] = React.useState<CoachToggles | null>(null);
   const { toast } = useToast();
 
   React.useEffect(() => {
@@ -195,6 +211,7 @@ export function AdminLlmCard() {
       if (s) setProvider((s.llm_provider ?? "anthropic") as Provider);
     });
     safe(api.usage(30)).then((u) => (u ? setUsage(u) : setUsageError(true)));
+    safe(api.coachToggles()).then((t) => t && setToggles(t));
   }, []);
 
   const changeProvider = (next: Provider) => {
@@ -207,6 +224,22 @@ export function AdminLlmCard() {
       .catch(() => {
         setProvider(previous);
         toast("Couldn't change the provider - try again.", "error");
+      });
+  };
+
+  const setToggle = (key: keyof CoachToggles, on: boolean) => {
+    const previous = toggles;
+    setToggles((t) => t && { ...t, [key]: on }); // optimistic
+    api
+      .setCoachToggles({ [key]: on })
+      .then((t) => {
+        setToggles(t);
+        const label = TOGGLE_COPY.find((c) => c.key === key)?.label ?? key;
+        toast(on ? `${label} turned on` : `${label} turned off for everyone`);
+      })
+      .catch(() => {
+        setToggles(previous);
+        toast("Couldn't update the toggle - try again.", "error");
       });
   };
 
@@ -255,6 +288,38 @@ export function AdminLlmCard() {
           <p className="mt-1.5 text-xs text-muted-foreground">
             Whoever&apos;s API key funds the app picks the provider - members always run on this.
           </p>
+        </div>
+
+        <div className="border-t border-border pt-5">
+          <p className="mb-1 text-sm font-medium">Coach features</p>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Switches apply to every member, admin included. Turning one off stops new
+            coach notes only - anything already written stays readable.
+          </p>
+          {toggles == null ? (
+            <div className="space-y-2">
+              <Skeleton className="h-10 rounded-xl" />
+              <Skeleton className="h-10 rounded-xl" />
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {TOGGLE_COPY.map(({ key, label, detail }) => (
+                <div key={key} className="flex items-center justify-between gap-4">
+                  <div>
+                    <label htmlFor={`toggle-${key}`} className="text-sm font-medium">
+                      {label}
+                    </label>
+                    <p className="text-xs text-muted-foreground">{detail}</p>
+                  </div>
+                  <Switch
+                    id={`toggle-${key}`}
+                    checked={toggles[key]}
+                    onCheckedChange={(on) => setToggle(key, on)}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="border-t border-border pt-5">

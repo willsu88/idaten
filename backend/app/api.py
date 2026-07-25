@@ -18,9 +18,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import (chat_quota, crypto, execution, feedback as feedback_mod, metrics,
-               niggles as niggles_mod, rate_limit, races as races_mod, scheduler,
-               support as support_mod, weekly as weekly_mod)
+from . import (chat_quota, crypto, execution, feedback as feedback_mod,
+               instance_settings, metrics, niggles as niggles_mod, rate_limit,
+               races as races_mod, scheduler, support as support_mod,
+               weekly as weekly_mod)
 from .config import config
 from .auth import (
     COOKIE_NAME,
@@ -234,6 +235,31 @@ def set_chat_cap(user_id: int, body: ChatCapBody, db: Session = Depends(get_db),
     chat_quota.set_cap(db, user_id, body.cap)
     return {"user_id": user_id, "chat_daily_cap": body.cap,
             "msgs_today": chat_quota.used_today(db, user_id)}
+
+
+class CoachTogglesBody(BaseModel):
+    # Partial update: omitted call sites are untouched.
+    weekly_summary: bool | None = None
+    execution_analysis: bool | None = None
+
+
+@auth_router.get("/coach_toggles")
+def get_coach_toggles(db: Session = Depends(get_db),
+                      admin: User = Depends(admin_user)):
+    """Instance-level coach call-site toggles (ADR 0003): which system-initiated
+    artifacts this deployment generates. One switch per call site, applying to
+    every member equally - operator policy, not per-member preference."""
+    return instance_settings.coach_toggles(db)
+
+
+@auth_router.put("/coach_toggles")
+def put_coach_toggles(body: CoachTogglesBody, db: Session = Depends(get_db),
+                      admin: User = Depends(admin_user)):
+    for site in instance_settings.TOGGLEABLE_CALL_SITES:
+        value = getattr(body, site)
+        if value is not None:
+            instance_settings.set_call_site_enabled(db, site, value)
+    return instance_settings.coach_toggles(db)
 
 
 @auth_router.delete("/users/{user_id}")
@@ -750,7 +776,7 @@ def week_summary(start: str | None = None, db: Session = Depends(get_db),
         "summary": _summary_dict(s, db, user.id),
         "generatable": (s is None
                         and week_start == weekly_mod.last_closed_week(today)
-                        and weekly_mod.summaries_enabled(db, user.id)),
+                        and weekly_mod.summaries_enabled(db)),
     }
 
 
@@ -1308,6 +1334,11 @@ def activity_analysis(activity_id: int, db: Session = Depends(get_db),
     if a.execution_analysis is None:
         if a.date < dt.date.today() - dt.timedelta(days=ANALYSIS_MAX_AGE_DAYS):
             raise HTTPException(400, "analysis is only generated for recent runs")
+        # Operator toggle (ADR 0003): generation only - a cached narrative
+        # above is still served. Absent reads as {analysis: null}, and the
+        # client simply renders no note.
+        if not instance_settings.call_site_enabled(db, "execution_analysis"):
+            return {"analysis": None, "coach": None}
         a.execution_analysis, a.execution_analysis_coach = (
             planner_mod.write_execution_analysis(db, a))
         db.commit()

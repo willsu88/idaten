@@ -72,6 +72,17 @@ class Setting(Base):
     value: Mapped[Any] = mapped_column(JSON)
 
 
+class InstanceSetting(Base):
+    """Instance-wide key/value JSON store - operator policy that applies to the
+    whole deployment, every member equally (docs/adr/0003). Deliberately has no
+    user_id: per-member policy belongs in Setting."""
+
+    __tablename__ = "instance_settings"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[Any] = mapped_column(JSON)
+
+
 class Activity(Base):
     __tablename__ = "activities"
 

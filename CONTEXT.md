@@ -46,3 +46,14 @@ It is a standalone artifact: it does not belong to any activity or daily review,
 ### Summary week
 The fixed window a weekly summary covers: Monday through Sunday in the app timezone, closing at local midnight Sunday.
 A week is only summarized after it has closed.
+
+### Instance setting
+Operator policy that applies to the whole deployment, every member equally, admin included.
+Distinct from a member setting (per-user preference) and from a server-owned member setting like the chat message limit (per-user policy).
+The admin is the operator: instance settings are set on the admin page and are invisible to the member-facing settings API.
+
+### Coach call-site toggle
+An instance setting that turns one system-initiated coach call site's LLM generation on or off.
+Absent means enabled; a toggle never affects deterministic machinery (sync, execution scoring, plan materialization) or the serving of artifacts that already exist.
+Re-enabling resumes forward-only: artifacts skipped while off are never backfilled.
+In v1 the toggleable call sites are `weekly_summary` and `execution_analysis`; the daily review is deliberately not toggleable.

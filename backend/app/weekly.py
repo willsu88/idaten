@@ -22,17 +22,12 @@ import threading
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import feedback as feedback_mod, support as support_mod
+from . import feedback as feedback_mod, instance_settings, support as support_mod
 from .llm import make_client
-from .models import Activity, Niggle, PlanDay, Race, Setting, WeeklySummary
+from .models import Activity, Niggle, PlanDay, Race, WeeklySummary
 from .settings_store import get_settings
 
 log = logging.getLogger(__name__)
-
-# Server-owned enabled flag (Idea G's seam, .scratch/coach-toggles): not in
-# settings DEFAULTS, so the member-facing settings API can never read or write
-# it. Absent = enabled. Checked at this module's generation choke point only.
-ENABLED_KEY = "weekly_summary_enabled"
 
 
 def app_today() -> dt.date:
@@ -52,11 +47,10 @@ def last_closed_week(today: dt.date) -> dt.date:
     return week_start_of(today) - dt.timedelta(days=7)
 
 
-def summaries_enabled(db: Session, user_id: int) -> bool:
-    """Absent = enabled; any falsy stored value (False, 0, "") = disabled, so
-    a future toggle can't accidentally write a value this reads as enabled."""
-    row = db.get(Setting, (user_id, ENABLED_KEY))
-    return row is None or bool(row.value)
+def summaries_enabled(db: Session) -> bool:
+    """The instance-level operator toggle (docs/adr/0003): one switch for the
+    whole deployment, checked at this module's generation choke point only."""
+    return instance_settings.call_site_enabled(db, "weekly_summary")
 
 
 WEEKLY_SUMMARY_SYSTEM_PROMPT = """\
@@ -255,7 +249,7 @@ def evaluate_week(
     Policy (ADR 0002): only the most recently closed week is generatable —
     the running week isn't over, and older weeks are never backfilled. Any
     date within the week is accepted and normalized to its Monday. Returns
-    None when the member's summaries are disabled (Idea G seam)."""
+    None while the operator has weekly summaries switched off (ADR 0003)."""
     today = today or app_today()
     week_start = week_start_of(week_start)
     generatable = last_closed_week(today)
@@ -271,8 +265,8 @@ def evaluate_week(
         if existing is not None:
             db.refresh(existing)
             return existing
-        if not summaries_enabled(db, user_id):
-            log.info("weekly summary disabled (user %s); skipping", user_id)
+        if not summaries_enabled(db):
+            log.info("weekly summary disabled on this instance; skipping user %s", user_id)
             return None
         return _evaluate_week_locked(db, user_id, week_start)
 

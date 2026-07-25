@@ -1680,3 +1680,24 @@ Forward-only: only the most recently closed week is generatable, older weeks are
 - Week page: a "Week in review" coach card renders below the week navigator (which carries the aggregates line) for any past week with a summary - the artifact's permanent home. Hidden while the viewed week is the current one.
 - Today page, Mondays only: the same card below the daily coach note, linking to the Week page; it lazily POSTs evaluate when `generatable`.
 - Cost-control seam (Idea G): a server-owned `weekly_summary_enabled` settings key, invisible to `GET/PUT /api/settings`; absent = enabled.
+
+## v1.35 - instance-level coach call-site toggles (operator control)
+
+Instance-wide switches (docs/adr/0003) that turn a system-initiated coach call site's LLM generation on or off for every member equally, admin included.
+V1 covers `weekly_summary` and `execution_analysis`; the daily review is deliberately not toggleable.
+Defaults preserve behavior (absent = enabled).
+A toggle governs generation only: cached artifacts stay readable, deterministic machinery (scoring, sync, plan materialization) is untouched, and re-enabling resumes forward-only with no backfill.
+Supersedes v1.34's per-user `weekly_summary_enabled` settings key: the flag now lives in the new `instance_settings` table, still invisible to `GET/PUT /api/settings`.
+No data migration: the per-user key never had a writer (it shipped in v1.34 as a read-only seam), so no deployment can hold a row for it.
+
+### Endpoints
+
+- `GET /api/auth/coach_toggles` (admin only) → `{ weekly_summary: boolean, execution_analysis: boolean }`.
+- `PUT /api/auth/coach_toggles` (admin only) body is a partial `{ weekly_summary?, execution_analysis? }`; omitted keys are untouched → the full toggle state.
+- `GET /api/week/summary`: `generatable` is false while the weekly summary is toggled off (existing rows still return).
+- `POST /api/activities/{id}/analysis`: while execution analysis is toggled off and nothing is cached, returns `{ analysis: null, coach: null }` with no LLM call; a cached narrative is served as before.
+
+### UI
+
+- Admin LLM card gains a "Coach features" section: one switch per call site with a caption noting switches apply to everyone and only stop NEW coach notes.
+- Member surfaces need no change: the weekly-summary card and the run-analysis note already render nothing when the artifact is absent.

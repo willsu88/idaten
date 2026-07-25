@@ -8,6 +8,7 @@ import type {
   ChatEvent,
   ChatMessage,
   ChatSessionsResponse,
+  CoachToggles,
   CourseTrack,
   CycleCalendarDay,
   DailyReview,
@@ -476,6 +477,15 @@ export const api = {
       `/api/auth/users/${userId}/chat_cap`,
       { method: "PUT", body: JSON.stringify({ cap }) },
     ),
+
+  /** Admin: instance-level coach call-site toggles (apply to every member). */
+  coachToggles: () => request<CoachToggles>("/api/auth/coach_toggles"),
+
+  setCoachToggles: (patch: Partial<CoachToggles>) =>
+    request<CoachToggles>("/api/auth/coach_toggles", {
+      method: "PUT",
+      body: JSON.stringify(patch),
+    }),
 
   chatHistory: (sessionId: string) =>
     request<ChatMessage[]>(`/api/chat/history?session_id=${encodeURIComponent(sessionId)}`),

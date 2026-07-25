@@ -643,6 +643,13 @@ export interface UsageSummary {
   by_call_site: Array<UsageBucket & { call_site: string }>;
 }
 
+/** GET/PUT /api/auth/coach_toggles (admin only) - instance-level call-site
+ * switches (ADR 0003): they govern LLM generation for every member equally. */
+export interface CoachToggles {
+  weekly_summary: boolean;
+  execution_analysis: boolean;
+}
+
 /** POST /api/auth/invites and POST /api/auth/users/{id}/reset_link */
 export interface InviteLink {
   path: string; // "/invite/<token>" — compose full URL with window.location.origin

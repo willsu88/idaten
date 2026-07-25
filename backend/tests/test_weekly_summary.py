@@ -263,17 +263,13 @@ def test_catch_up_considers_a_missing_monday_summary_pending(db, user):
     # A Monday whose weekly LLM call failed must look pending to catch_up even
     # when the daily review itself succeeded (the artifacts are independent).
     from app import scheduler
-    from app.models import Setting, WeeklySummary
+    from app.models import WeeklySummary
     assert scheduler._weekly_done(db, user.id, MONDAY) is False
     assert scheduler._weekly_done(db, user.id, dt.date(2026, 7, 23)) is True  # Thursday
 
     db.add(WeeklySummary(user_id=user.id, week_start=CLOSED_WEEK, coach_note="done"))
     db.commit()
     assert scheduler._weekly_done(db, user.id, MONDAY) is True
-
-    db.add(Setting(user_id=user.id + 1, key=weekly.ENABLED_KEY, value=False))
-    db.commit()
-    assert scheduler._weekly_done(db, user.id + 1, MONDAY) is True  # disabled = done
 
 
 def test_eager_weekly_failure_never_raises(db, user, monkeypatch):
@@ -287,10 +283,9 @@ def test_eager_weekly_failure_never_raises(db, user, monkeypatch):
 
 
 def test_disabled_setting_skips_generation(db, user, monkeypatch):
-    # Idea G seam: the enabled flag is read at the generation choke point.
-    from app.models import Setting
-    db.add(Setting(user_id=user.id, key=weekly.ENABLED_KEY, value=False))
-    db.commit()
+    # ADR 0003 seam: the instance toggle is read at the generation choke point.
+    from app import instance_settings
+    instance_settings.set_call_site_enabled(db, "weekly_summary", False)
     stub = StubWeeklyLLM({"summary": "nope"})
     _use_llm(monkeypatch, stub)
     assert weekly.evaluate_week(db, user.id, CLOSED_WEEK, today=MONDAY) is None

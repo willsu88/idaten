@@ -1,45 +1,43 @@
 ---
-title: Per-call-site coach toggles, admin-configurable (cost control)
-labels: [design-open]
-status: open
+title: Instance-level coach call-site toggles (operator control)
+labels: [done]
+status: closed
 ---
 
-## Problem Statement
+## Problem Statement (revised at grilling, 2026-07-25)
 
-The chat call site has a cost lever (the per-user daily chat message limit), and the admin page shows cost per call site via `llm_usage`.
-But the system-initiated Coach call sites - daily review, execution analysis, and the new weekly summary - have no off switch at all.
-Every member gets every artifact, so the household's fixed LLM floor grows with each new call site and the admin can see the cost but cannot act on it.
+The original framing was household cost control, and the data killed it: all-time LLM spend at review time was $0.20 total (~$1/month extrapolated floor for 2 members).
+The real driver is the open-source route: someone self-hosting this code should decide which system-initiated coach features their instance runs and pays for.
+The admin IS the operator, so the control lives on the admin page.
 
-## Solution
+## Decisions (grilling session 2026-07-25)
 
-Give the admin per-member toggles that turn individual system-initiated coach artifacts on or off: weekly summary, execution analysis narrative, and (pending the open decision below) the daily review note.
-Toggles live on the admin page next to the chat message limit and follow its conventions: admin-set, enforcement identical for everyone including the admin, defaults preserve current behavior (everything on).
-A toggle governs LLM generation only, never deterministic machinery.
+1. Build it, reframed: an operator/deployment control, not a household cost lever.
+2. Instance-level granularity: one toggle per call site, applying to every member equally (docs/adr/0003).
+   Per-member is deferred until a real household need appears; the enforcement seam is identical if it ever does.
+3. V1 scope: weekly summary and the execution-analysis narrative only (the original ticket's option a).
+   The daily review stays always-on; it is load-bearing (plan proposals, Garmin plan refresh, Today page anchor) and its toggle question is deferred.
+4. Storage: a new `instance_settings` table (key, value JSON) read through `app/instance_settings.py`; admin toggles it at runtime, no restart.
+5. Disabled UX: hide + no backfill.
+   The endpoint reports the artifact absent, the card does not render, re-enable resumes forward-only, and weeks skipped while off stay permanent gaps (same rule as pre-launch weeks).
+6. Defaults: everything on (absent = enabled), so existing deployments see no change.
 
-## Open decision (blocks ready-for-agent)
+## What shipped
 
-Is the daily review toggleable at all in v1?
-Unlike the other two artifacts, the daily review is load-bearing: it carries plan proposals, triggers the Garmin plan refresh, and anchors the Today page.
-Options: (a) not toggleable in v1 - ship toggles for weekly summary and execution analysis only; (b) toggleable, but only the coach_note narrative is suppressed while proposals and plan refresh still run; (c) fully toggleable, accepting that proposals stop too.
-Recommendation: (a) for v1 - it keeps the ticket small and defers the hard question until the cheaper levers prove insufficient.
+- `instance_settings` table + module: `call_site_enabled` / `set_call_site_enabled` / `coach_toggles`, absent = enabled, falsy stored value = disabled.
+- `weekly.summaries_enabled(db)` retargeted from the per-user Setting seam to the instance toggle; scheduler `_weekly_done` treats disabled as done.
+- `POST /api/activities/{id}/analysis` returns `{analysis: null, coach: null}` while disabled and nothing is cached; a cached narrative is always served.
+- Admin endpoints: `GET`/`PUT /api/auth/coach_toggles` (partial PUT, admin-only).
+- Admin page: "Coach features" switch row in the LLM card; member UI needed no change (both cards already hide on absence).
 
-## Implementation Decisions (leanings, to confirm at spec time)
+## Invariants held
 
-- Storage: server-owned per-user Setting keys excluded from the member-facing settings API, same pattern as the chat daily cap.
-- Enforcement at the generation seam: the scheduler job and the lazy endpoints check one settings read per call site; a disabled call site generates nothing and the endpoint reports the artifact as absent.
-- Execution SCORING is unaffected (non-LLM, computed at sync); only the lazy analysis narrative is suppressed.
-- Sync, plan materialization, and readiness ingestion are never affected by any toggle.
-- Disabled weekly summaries leave permanent gaps in the Week page history: no backfill on re-enable, same rule as pre-launch weeks.
-- UI: hide the artifact's card entirely when disabled rather than showing a "turned off by admin" state (to confirm).
-- Frontend admin surface: toggle controls in the "By member" area of the admin page, near the chat cap column.
+- A toggle governs LLM generation only, never deterministic machinery: execution scoring, sync, plan materialization, and readiness ingestion are untouched.
+- Enforcement is one settings read at each call site's generation choke point, at generation time; a mid-week flip affects whatever generates next.
+- The toggles are invisible to `GET`/`PUT /api/settings`.
 
-## Alternatives to weigh before building
+## Deferred
 
-Model routing may be the better cost lever: every call site currently pays the global Opus rate, and routing cheap call sites (execution analysis, edit summaries) to a smaller model could save more than turning features off - see the Idea B architecture findings in ROADMAP.md.
-Decide which to build first; they compose, but routing may make this ticket unnecessary for a while.
-
-## Related
-
-- ROADMAP.md Idea G points here.
-- Weekly summary feature (CONTEXT.md, docs/adr/0002) is being built with its enabled-flag read through a single settings check, so this ticket lands as a settings row + UI, not a refactor.
-- Prior art: `.scratch/coach-chat-cap/spec.md` (the chat message limit) for storage, enforcement, and admin-UI conventions.
+- Daily review toggle (options b/c in the original ticket).
+- Per-member overrides layered on the instance switch.
+- Model routing (the other cost lever, ROADMAP Idea B findings); it composes with this and `instance_settings` is its natural config home.
