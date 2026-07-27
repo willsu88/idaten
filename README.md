@@ -116,5 +116,6 @@ If your account uses MFA, do the first login outside Docker or temporarily disab
 | [CONTEXT.md](CONTEXT.md) | Canonical domain glossary - code, UI copy, and docs use these words |
 | [API_CONTRACT.md](API_CONTRACT.md) | The backend API contract the frontend is built against |
 
-Data lives in `./data/garmin_bot.db` (SQLite); back it up by copying the file.
+Data lives in `./data/garmin_bot.db` (SQLite).
+Back it up in-container with `docker compose exec -T backend python -c "import sqlite3; sqlite3.connect('/data/garmin_bot.db').backup(sqlite3.connect('/data/backup.db'))"` (or stop the stack first and copy the file) - never copy the live file while the stack is running, because the WAL sidecar files make a plain copy inconsistent.
 Watch push creates a structured running workout in Garmin Connect and schedules it on the plan date; superseded workouts are deleted and re-pushed, and rest/cross-train days are not pushed.
