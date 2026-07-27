@@ -75,8 +75,9 @@ Walk down; stop at the first yes.
 4. **Is the failure only visible in what the prose *means* or how it *sounds*?**
    Layer 4. One binary criterion per case; meaning goes to `judge()` (fail-closed), voice goes to `tone_judge` (fail-open).
    Assert everything assertable first - the judge gets only the residue.
-5. **Did a real user already flag it?**
+5. **Did a real user - or the nightly QA judge - already flag it?**
    That is layer 5's job once the replay runner exists; until then, distill it into a layer 3-4 case by hand.
+   A Coach QA card fail (ADR 0016) goes through `.claude/skills/diagnose-qa-fail/` first: it classifies the fail as an evidence gap, a judge miss, or a real coach failure, and only the last two produce a new case or prompt fix.
 
 Two standing rules across all layers:
 
@@ -109,3 +110,5 @@ This procedure is also encoded as a repo skill (`.claude/skills/add-eval-case/SK
 - ADR 0005: the judge calls `make_client()` - evals ride the same `LLMClient` seam as production, so there is no separate test-only provider path to drift.
 - ADR 0014 + `COACH_QUALITY.md`: the flight recorder's frozen thumbs ratings are the intake for layer 5.
 - ADR 0001: `start.sh` is the gate where layers 1-2 run; a red test never reaches the live app.
+- ADR 0016: the layer-4 judge promoted to production - the nightly QA job grades every instrumented chat session against the rubric in `app/qa.py`, through the same `judge_one` choke point the layer 3-4 judge-quality evals exercise.
+  A card fail is diagnosed with `.claude/skills/diagnose-qa-fail/`; a confirmed judge miss becomes a layer 3-4 case via `add-eval-case`.
