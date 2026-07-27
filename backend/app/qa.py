@@ -132,11 +132,22 @@ def _skip_watermark(db: Session) -> dt.datetime | None:
 
 def gradeable_sessions(db: Session, now_utc: dt.datetime | None = None) -> list[tuple[int, str]]:
     """(user_id, session_id) pairs due for judging: quiet since local midnight,
-    last active after any skip watermark, and either never scored or resumed
-    after their last scoring (re-grade)."""
+    last active after any skip watermark, instrumented, and either never scored
+    or resumed after their last scoring (re-grade).
+
+    Instrumented = at least one prompt_version-stamped message. Scoring starts
+    where evidence starts: a session from before tool-call persistence has no
+    recorded ground truth, so grounded_data can only fail-closed on evidence
+    that was never written down - an unfalsifiable verdict, worse than none."""
     now_utc = now_utc or dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
     midnight = _local_midnight_utc(now_utc)
     floor = _skip_watermark(db)
+    stamped = (
+        select(ChatMessage.session_id)
+        .where(ChatMessage.prompt_version.is_not(None))
+        .group_by(ChatMessage.session_id)
+        .subquery()
+    )
     last_msg = (
         select(
             ChatMessage.user_id,
@@ -157,6 +168,7 @@ def gradeable_sessions(db: Session, now_utc: dt.datetime | None = None) -> list[
     )
     rows = db.execute(
         select(last_msg.c.user_id, last_msg.c.session_id)
+        .join(stamped, stamped.c.session_id == last_msg.c.session_id)
         .join(last_scored, last_scored.c.artifact_ref == last_msg.c.session_id,
               isouter=True)
         .where(

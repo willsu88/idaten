@@ -95,6 +95,15 @@ def test_straddling_session_waits_for_its_last_message(db, user):
     assert qa.gradeable_sessions(db, NOW) == []
 
 
+def test_pre_instrumentation_sessions_are_never_gradeable(db, user):
+    # No prompt_version-stamped message = no recorded tool ground truth: any
+    # grounded_data fail would be unfalsifiable. Scoring starts where evidence
+    # starts; history from before instrumentation stays out of scope forever.
+    _msg(db, user.id, "old", "user", "how was my week?", YESTERDAY)
+    _msg(db, user.id, "old", "assistant", "You ran 42km.", YESTERDAY)
+    assert qa.gradeable_sessions(db, NOW) == []
+
+
 def test_scored_session_is_done_until_it_resumes(db, user, monkeypatch):
     _seed_session(db, user.id, "s1", at=YESTERDAY)
     _stub(monkeypatch, StubJudge([PASS, PASS, NA]))
