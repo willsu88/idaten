@@ -1,6 +1,7 @@
 # Ticket: redesign README.md as the repo's front door
 
-Filed 2026-07-27. Status: ready - do in a fresh session that reads the current README cold, the way a first-time visitor would.
+Filed 2026-07-27. Status: done 2026-07-27 (commit 4cef402) - README redesigned around the three jobs, root CLAUDE.md written, docs/adr/README.md index created; the same pass dissolved ROADMAP.md and UX_IMPROVEMENTS.md into `.scratch/` tickets.
+Still owed by the [[llm-seam-extraction]] ticket: the cross-link from the README's LLM-engineering section to the seam repo once it exists.
 
 ## The problem
 
