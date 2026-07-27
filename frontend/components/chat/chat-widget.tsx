@@ -9,6 +9,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { History, Maximize2, MessageCircle, MessageSquarePlus, Sparkles, X } from "lucide-react";
 import { ChatConversation } from "@/components/chat/chat-conversation";
+import { ReportChatButton } from "@/components/chat/report-chat-button";
 import { useChat } from "@/components/chat/chat-provider";
 import { useCoach } from "@/components/coach-provider";
 import { cn } from "@/lib/utils";
@@ -48,6 +49,7 @@ export function ChatWidget() {
               </span>
             )}
             <p className="flex-1 truncate text-sm font-semibold">{persona?.name ?? "Coach"}</p>
+            <ReportChatButton compact />
             <button
               type="button"
               title="History"

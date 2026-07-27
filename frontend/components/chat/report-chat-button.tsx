@@ -14,7 +14,7 @@ import { Dialog, DialogDescription, DialogFooter, DialogTitle } from "@/componen
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 
-export function ReportChatButton() {
+export function ReportChatButton({ compact = false }: { compact?: boolean }) {
   const { sessionId, sessions } = useChat();
   const { toast } = useToast();
   const [open, setOpen] = React.useState(false);
@@ -49,15 +49,29 @@ export function ReportChatButton() {
 
   return (
     <>
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={reported}
-        onClick={() => setOpen(true)}
-      >
-        <Flag className="h-3.5 w-3.5" />
-        {reported ? "Reported" : "Report"}
-      </Button>
+      {compact ? (
+        // Icon-only trigger matching the floating panel's header buttons.
+        <button
+          type="button"
+          title={reported ? "Reported" : "Report this chat"}
+          aria-label={reported ? "Chat reported" : "Report this chat"}
+          disabled={reported}
+          onClick={() => setOpen(true)}
+          className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:text-accent md:h-8 md:w-8"
+        >
+          <Flag className="h-4 w-4" />
+        </button>
+      ) : (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={reported}
+          onClick={() => setOpen(true)}
+        >
+          <Flag className="h-3.5 w-3.5" />
+          {reported ? "Reported" : "Report"}
+        </Button>
+      )}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTitle>Report this chat</DialogTitle>
         <DialogDescription>
