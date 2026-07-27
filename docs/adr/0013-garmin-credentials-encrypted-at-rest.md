@@ -21,4 +21,4 @@ The key lives deliberately outside the database and is not captured by a `.db` b
   The VPS-migration runbook (`.scratch/vps-migration/ticket.md`) carries this as an explicit checklist item.
 - `.db` backups remain secrets (they hold health and location data) but no longer leak credentials on their own.
 - The same encrypt-at-rest path is the designated home for future stored secrets (per-user BYOB LLM keys).
-- Known accepted gap: the on-disk Garmin OAuth token cache stays plaintext in a `0700` directory - tracked, lower stakes than the password.
+- Known accepted gap: the on-disk Garmin OAuth token cache stays plaintext in a `0700` directory - settled as accepted risk in ADR 0015.

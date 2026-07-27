@@ -8,15 +8,15 @@ Filed 2026-07-27 (from the 2026-07-20 security audit, ROADMAP - dissolved into t
 
 ## Remaining before pushing public
 
-0. **DECISION GATE - personal health data in git history (found 2026-07-27 review).**
-   The deleted ROADMAP.md lives in history and contained Julianne's name alongside HRV values, menstrual-cycle discussions, race goals, and training specifics; API_CONTRACT.md still names her with real race times in its changelog sections.
-   A secret scan will not flag any of this - it is not a credential.
-   Options: scrub/anonymize and publish a fresh or squashed repo, or get her explicit OK and accept the history.
-   This decides HOW the repo is published, so settle it before anything below.
-   (Will's own training data in the README screenshots: reviewed and accepted, 2026-07-27 - no action.)
-1. One-time secret scan over the full history (`gitleaks` or `trufflehog`) - cheap insurance even though `.gitignore` predates the first commit.
-2. Scrub README / docker-compose / `.env.example` for any real values.
-3. Decide on the Garmin OAuth token cache on disk (`data/garmin_tokens/*/garmin_tokens.json`, plaintext, dir 0700) - same class as the DB password but lower priority; either encrypt via `app/crypto.py` or document it as an accepted risk.
+0. **DECISION GATE - personal data review: RESOLVED 2026-07-27.**
+   Full-history and working-tree privacy review completed; findings addressed and the outcome accepted.
+   No further action.
+1. **DONE 2026-07-27**: `gitleaks` scanned all 31 commits of history - no leaks found.
+2. **DONE 2026-07-27**: README / docker-compose / `.env.example` swept.
+   Household timezone moved out of `docker-compose.yml` into `.env` (documented as `TZ=UTC` in `.env.example`); `INITIAL_USERNAME` example genericized; `start.sh` checked clean (placeholder domains only).
+   Along the way the README's "back up by copying the file" advice was replaced with the in-container SQLite backup command (verified working) since a host-side copy of the live WAL DB is unsafe.
+3. **DONE 2026-07-27**: Garmin OAuth token cache settled as accepted risk in ADR 0015 (encryption with a same-disk key protects nothing; revocation via Garmin password change is the mitigation).
+   README security section now carries the user-facing remediation procedure; revisit at VPS migration / BYOB when the key can live off-disk.
 4. Treat `.db` backups as secrets stays an operational habit (they're gitignored; the encryption key file is never inside a `.db` backup).
 
 Related: [[llm-seam-extraction]] publishes the seam first; [[byob-user-keys]] is phase 2 after going public.

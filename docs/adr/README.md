@@ -17,3 +17,4 @@ Each records the context, the options weighed, and why the chosen one won - so t
 - [0012](0012-outbound-tunnel-owned-by-start-sh.md) - Public access is an outbound Cloudflare tunnel, owned by start.sh
 - [0013](0013-garmin-credentials-encrypted-at-rest.md) - Third-party credentials are encrypted at rest, with the key outside the DB
 - [0014](0014-feedback-loop-is-a-flight-recorder.md) - The coach-quality feedback loop is a flight recorder, not an autopilot
+- [0015](0015-garmin-token-cache-accepted-plaintext.md) - The Garmin OAuth token cache stays plaintext; revocation, not encryption, is the mitigation

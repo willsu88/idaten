@@ -104,6 +104,7 @@ If your account uses MFA, do the first login outside Docker or temporarily disab
 - **Self-host only.** This is a personal, single-household app. It has no public-internet hardening and is meant to run on your own machine or behind your own tunnel.
 - **Not affiliated with Garmin.** Garmin login uses the unofficial `garminconnect` library, which scrapes Garmin Connect and can break if Garmin changes their API. "Garmin" is a trademark of Garmin Ltd.; this project is independent and unendorsed. Use at your own risk, and don't put "Garmin" in any fork's name.
 - **Your credentials stay local.** Garmin passwords are encrypted at rest (`SECRET_KEY`) and, after the first login, replaced by cached OAuth tokens under `data/`. Your health data and API keys never leave your machine except in the LLM calls you configure. Nothing is committed to git - `.env`, `data/`, and `backups/` are gitignored.
+- **Treat `data/` as sensitive.** The cached Garmin OAuth tokens in `data/garmin_tokens/` are plaintext by the library's design ([ADR 0015](docs/adr/0015-garmin-token-cache-accepted-plaintext.md)) - anyone with that file can read your Garmin account until revoked. If `data/` may have leaked, change your Garmin password immediately (this invalidates the tokens), then reconnect Garmin in Settings.
 - **No warranty.** Provided as-is; you are responsible for your own data, backups, and API costs.
 
 ## Docs
