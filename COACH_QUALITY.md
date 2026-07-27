@@ -12,7 +12,8 @@ The system prompt never changes on its own.
 - **Coach note** (the morning daily review, `DailyCoachNote` on Today) - highest volume, the relationship surface; catches tone/grounding drift fastest.
 - **Execution analysis** (the post-run note on `ResultCard` / activity detail) - highest stakes; where hallucination risk concentrates (invented numbers, ungrounded race-goal claims).
 - **Edit proposals** - no thumbs; accept/dismiss is the decision signal. A dismiss offers an optional one-tap reason: "Didn't want the change" (preference) vs "The reasoning was wrong" (the quality signal).
-- **Chat replies** - deliberately NOT rated; the athlete already corrects the coach in-line, and ratings there would be noise.
+- **Chat replies** - deliberately NOT rated by humans; the athlete already corrects the coach in-line, and per-message ratings would be noise.
+  Chat quality is instead machine-scored: the nightly QA judge grades every session (see "Continuous QA" below), making chat the most-observed surface rather than the least.
 
 Thumbs are ghost icons on the shared `CoachNote` component - tap-optional, never a prompt, re-tappable to change.
 A thumbs-down offers preset chips (wrong / off tone / too long / not useful) plus an optional free-text line.
@@ -37,8 +38,8 @@ Its job is passive: a glance answers "is anything worth acting on, and on which 
 
 ### Stage 3 - The eval regression harness (cases accumulate automatically; RUNNING them is human-initiated)
 
-There is no cron and no schedule.
-The trigger is noticing a problem (via Stage 2, or a direct complaint) and deciding to fix it.
+There is no cron and no schedule for *improvement* - the nightly QA job (Continuous QA, below) scores on a schedule, but it only ever writes score rows; fixing remains human-initiated.
+The trigger is noticing a problem (via Stage 2, the QA card, or a direct complaint) and deciding to fix it.
 A fix session looks like:
 
 1. Pull the negative rows - each is already a ready-made test case with its frozen snapshot.
@@ -55,6 +56,14 @@ Any future prompt edit - whatever motivated it - should run against the accumula
 When the same reason recurs enough to be a preference rather than a bug ("too long", "too much jargon"), distill it into ONE stable line in that athlete's `style_prompt`.
 Human-reviewed, changed rarely.
 This is the ONLY path by which feedback reaches the live prompt.
+
+## Continuous QA - the nightly scorecard (ADR 0016)
+
+The eval judge promoted from CI-only to continuous: every night a scheduler job grades 100% of chat sessions that have gone quiet, one fail-closed judge call per (session, rubric item), and stores pass / fail / n/a verdicts.
+The rubric is a Python module (git-versioned, hashed into `rubric_version`); score rows also carry the producing `prompt_version` (stamped at chat time) and the `judge_model`, so before/after comparison across a prompt edit is a query.
+The judge runs on a different provider than the coach to avoid self-preference bias, and it reads the full transcript plus tool results - which means each scored session's conversation and training data is sent to the judge provider under its API terms; that exposure is deliberate, and the lever is the `judge_provider` config key.
+The admin page shows version-grouped pass rates with visible denominators and the recent fails with the judge's reasons; scoring is toggleable like the other system-initiated call sites.
+The flight-recorder stance is unchanged: the QA job scores, it never edits a prompt.
 
 ## What we deliberately never do
 

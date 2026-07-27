@@ -241,6 +241,7 @@ class CoachTogglesBody(BaseModel):
     # Partial update: omitted call sites are untouched.
     weekly_summary: bool | None = None
     execution_analysis: bool | None = None
+    qa: bool | None = None
 
 
 @auth_router.get("/coach_toggles")
@@ -1797,6 +1798,16 @@ def feedback_summary(days: int = 90, db: Session = Depends(get_db),
     return feedback_mod.summary(db, days=max(1, min(days, 365)))
 
 
+@router.get("/qa/summary")
+def qa_summary(db: Session = Depends(get_db), admin: User = Depends(admin_user)):
+    """Nightly-scorecard observability (ADR 0016): per rubric item, weekly and
+    version-grouped verdict counts plus recent fails with the judge's reasons.
+    Admin-only; surfaces conduct, never member transcripts."""
+    from . import qa
+
+    return qa.qa_summary(db)
+
+
 # --- garmin connection / sync ---------------------------------------------------
 
 class GarminConnectBody(BaseModel):
@@ -2078,6 +2089,9 @@ def chat_history(session_id: str, db: Session = Depends(get_db),
     ).all()
     out = []
     for r in rows:
+        # tool_call rows are QA/debug provenance (ADR 0016), not conversation.
+        if r.kind == "tool_call":
+            continue
         msg = {
             "role": r.role,
             "kind": r.kind or "text",

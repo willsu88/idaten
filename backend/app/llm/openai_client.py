@@ -13,9 +13,12 @@ from . import Response, ToolCall
 
 
 class OpenAIClient:
-    def __init__(self, *, user_id: int | None = None, call_site: str | None = None) -> None:
+    def __init__(
+        self, *, user_id: int | None = None, call_site: str | None = None,
+        model: str | None = None,
+    ) -> None:
         self._client = OpenAI(api_key=config.openai_api_key)
-        self._model = config.openai_model
+        self._model = model or config.openai_model
         self._user_id = user_id
         self._call_site = call_site
 

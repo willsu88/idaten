@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { UserInfo } from "@/lib/types";
 import { api, safe } from "@/lib/api";
 import { AdminLlmCard } from "@/components/admin-llm-card";
+import { AdminQaCard } from "@/components/admin-qa-card";
 import { AdminQualityCard } from "@/components/admin-quality-card";
 import { MembersCard } from "@/components/members-card";
 import { PageHeader } from "@/components/page-header";
@@ -45,6 +46,7 @@ export default function AdminPage() {
         <MembersCard me={me} />
         <AdminLlmCard />
         <AdminQualityCard />
+        <AdminQaCard />
       </div>
     </div>
   );

@@ -28,6 +28,11 @@ class Config(BaseSettings):
     anthropic_model: str = "claude-opus-4-8"
     openai_api_key: str = ""
     openai_model: str = "gpt-5.1"
+    # QA judge (ADR 0016): pinned independently of the coach so a coach model
+    # switch never silently changes the grader, and cross-provider by default
+    # so the coach is not graded by its own model family.
+    judge_provider: str = "openai"
+    judge_model: str = "gpt-5.4-mini"
 
     # Garmin (used to seed the first user's credentials at bootstrap; after
     # that, credentials live per-user in the users table)

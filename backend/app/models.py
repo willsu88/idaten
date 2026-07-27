@@ -3,7 +3,10 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
@@ -449,13 +452,21 @@ class ChatMessage(Base):
     user_id: Mapped[int] = mapped_column(Integer, index=True)
     session_id: Mapped[str] = mapped_column(String, index=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    role: Mapped[str] = mapped_column(String)  # user | assistant
+    role: Mapped[str] = mapped_column(String)  # user | assistant | tool
     # kind "text": content is the message (markdown).
     # kind "edit_proposed": payload = {"edit_id": ...}; content is a plain-text
     # fallback so LLM history replay still reads sensibly.
+    # kind "tool_call": payload = {"name", "args", "result"}; content stays empty
+    # so history replay skips it. The QA judge reads these as the ground truth
+    # the coach's claims are checked against (ADR 0016).
     kind: Mapped[str] = mapped_column(String, default="text")
     content: Mapped[str] = mapped_column(Text, default="")
     payload: Mapped[Any] = mapped_column(JSON, nullable=True)
+    # Hash of the hand-written chat instructions (template + style line) that
+    # produced this assistant turn - stamped at generation time so QA scores
+    # attribute to the prompt actually deployed, never the hydrated prompt
+    # (which embeds daily data and would mint a version per user per day).
+    prompt_version: Mapped[str | None] = mapped_column(String)
 
 
 class SyncLog(Base):
@@ -468,6 +479,39 @@ class SyncLog(Base):
     detail: Mapped[str] = mapped_column(Text, default="")
     plan_updated: Mapped[bool] = mapped_column(Boolean, default=False)
     kind: Mapped[str | None] = mapped_column(String, default="full")  # full | data
+
+
+class QaScore(Base):
+    """One judge verdict on one coach artifact against one rubric item (ADR
+    0016). Addressed like feedback but by call site: (call_site, artifact_ref)
+    names any coach artifact - for chat, artifact_ref is the session id. The
+    upsert key means one living verdict per (artifact, item): a resumed session
+    is re-judged in full and its rows replaced, so scores always describe the
+    complete transcript. The three stamps (prompt_version, rubric_version,
+    judge_model) fully determine whether two scores are comparable."""
+
+    __tablename__ = "qa_scores"
+    __table_args__ = (
+        UniqueConstraint("call_site", "artifact_ref", "rubric_key",
+                         name="uq_qa_scores_artifact_item"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    call_site: Mapped[str] = mapped_column(String, index=True)  # chat (v1)
+    artifact_ref: Mapped[str] = mapped_column(String, index=True)  # chat: session_id
+    rubric_key: Mapped[str] = mapped_column(String)
+    verdict: Mapped[str] = mapped_column(String)  # pass | fail | na
+    reason: Mapped[str] = mapped_column(Text, default="")
+    # Local date of the artifact (chat: the session's last message) - the axis
+    # trend buckets use, so a session graded after midnight lands on the day
+    # the conversation actually happened.
+    artifact_date: Mapped[dt.date | None] = mapped_column(Date)
+    prompt_version: Mapped[str | None] = mapped_column(String)
+    rubric_version: Mapped[str] = mapped_column(String)
+    judge_model: Mapped[str] = mapped_column(String)
+    scored_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, index=True)
 
 
 class LlmUsage(Base):

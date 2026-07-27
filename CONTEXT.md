@@ -63,3 +63,4 @@ An instance setting that turns one system-initiated coach call site's LLM genera
 Absent means enabled; a toggle never affects deterministic machinery (sync, execution scoring, plan materialization) or the serving of artifacts that already exist.
 Re-enabling resumes forward-only: artifacts skipped while off are never backfilled.
 In v1 the toggleable call sites are `weekly_summary` and `execution_analysis`; the daily review is deliberately not toggleable.
+The nightly QA scoring job (`qa`) is toggleable through the same mechanism.

@@ -1701,3 +1701,24 @@ No data migration: the per-user key never had a writer (it shipped in v1.34 as a
 
 - Admin LLM card gains a "Coach features" section: one switch per call site with a caption noting switches apply to everyone and only stop NEW coach notes.
 - Member surfaces need no change: the weekly-summary card and the run-analysis note already render nothing when the artifact is absent.
+
+## v1.36 - coach QA scorecards (nightly judged chat sessions)
+
+Production QA on the coach (ADR 0016): a nightly job grades every chat session that has gone quiet since local midnight, one fail-closed judge call per (session, rubric item), on a judge provider/model pinned independently of the coach.
+Verdicts are three-valued - `pass` / `fail` / `na` - and `na` is excluded from every pass-rate denominator.
+Score rows carry `prompt_version` (hash of the hand-written chat instructions, stamped at generation time), `rubric_version` (hash of the rubric module), and `judge_model`; a resumed session is re-judged in full and its verdicts replaced.
+QA scoring is the third instance-level call-site toggle.
+
+### Endpoints
+
+- `GET /api/qa/summary` (admin only) → `{ rubric_version, judge_model, enabled, items, recent_fails }`.
+  `items` is one entry per rubric item: `{ key, weeks: [{ week_start, pass, fail, na }] (last 8, oldest first), versions: [{ prompt_version, pass, fail, na, pass_rate }] (first-seen order), regression: boolean }`.
+  `pass_rate` is over applicable verdicts only, `null` when nothing applicable; `regression` is true when the newest version's rate is below the previous version's with >= 5 applicable verdicts on the newest.
+  `recent_fails` is newest-first: `{ scored_at, artifact_date, session_id, rubric_key, reason, prompt_version }` - the reason describes conduct and never quotes the member.
+- `GET/PUT /api/auth/coach_toggles` gains the `qa` key, same partial-update contract as v1.35.
+- `GET /api/chat/history` never returns `tool_call` rows (QA/debug provenance, not conversation).
+
+### UI
+
+- Admin page gains a "Coach QA" card: per rubric item, this week's counts (always shown with denominators, e.g. "3/4"), the version-grouped comparison table, a highlight on `regression`, and the recent-fails list with reasons and session references. No transcript drill-down.
+- The "Coach features" toggles section gains the QA switch.

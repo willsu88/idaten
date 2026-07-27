@@ -69,9 +69,12 @@ def _to_anthropic_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 class AnthropicClient:
-    def __init__(self, *, user_id: int | None = None, call_site: str | None = None) -> None:
+    def __init__(
+        self, *, user_id: int | None = None, call_site: str | None = None,
+        model: str | None = None,
+    ) -> None:
         self._client = Anthropic(api_key=config.anthropic_api_key)
-        self._model = config.anthropic_model
+        self._model = model or config.anthropic_model
         self._user_id = user_id
         self._call_site = call_site
 

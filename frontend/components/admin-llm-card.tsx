@@ -197,6 +197,11 @@ const TOGGLE_COPY: Array<{ key: keyof CoachToggles; label: string; detail: strin
     label: "Run analysis",
     detail: "The coach's note on a scored run. Scores themselves always compute.",
   },
+  {
+    key: "qa",
+    label: "Coach QA",
+    detail: "Nightly scorecard on chat sessions. Off = the judge never runs; skipped nights stay unscored.",
+  },
 ];
 
 export function AdminLlmCard() {

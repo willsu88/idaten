@@ -148,6 +148,17 @@ def _chat_race(r_dict: dict) -> dict:
     return out
 
 
+def chat_prompt_version(settings: dict) -> str:
+    """Version hash of chat's hand-written instructions: the static template plus
+    the athlete's style line, NEVER the hydrated system prompt (daily data would
+    mint a unique version per user per day and make QA version grouping
+    meaningless - ADR 0016)."""
+    from ..feedback import prompt_version
+    from ..planner import style_prompt
+
+    return prompt_version(SYSTEM_TEMPLATE + style_prompt(settings))
+
+
 def _system_prompt(db: Session, user: User) -> str:
     from ..garmin.training_plan import garmin_plan_context
     from ..planner import _athlete_block, _hr_zones, style_prompt
@@ -220,6 +231,7 @@ def run_chat(db: Session, user: User, session_id: str | None, user_message: str,
     settings = get_settings(db, user.id)
     client = make_client(settings.get("llm_provider"), user_id=user.id, call_site="chat")
     system = _system_prompt(db, user)
+    pv = chat_prompt_version(settings)
     messages = _load_history(db, user.id, session_id)
     messages.append({"role": "user", "content": llm_text})
     db.add(ChatMessage(user_id=user.id, session_id=session_id, role="user",
@@ -298,6 +310,15 @@ def run_chat(db: Session, user: User, session_id: str | None, user_message: str,
                 messages.append(
                     {"role": "tool", "tool_call_id": tc.id, "content": tool_result}
                 )
+                # Persist the call + result: the ground truth the QA judge (and a
+                # debugging operator) checks the coach's claims against. Empty
+                # content keeps these rows out of history replay.
+                db.add(ChatMessage(
+                    user_id=user.id, session_id=session_id, role="tool",
+                    kind="tool_call", prompt_version=pv,
+                    payload={"name": tc.name, "args": tc.args, "result": tool_result},
+                ))
+                db.commit()
                 yield {"type": "tool", "name": tc.name, "status": "done"}
                 if pending_edit is not None:
                     # Persist the proposal marker so history reloads re-render the
@@ -306,6 +327,7 @@ def run_chat(db: Session, user: User, session_id: str | None, user_message: str,
                         user_id=user.id, session_id=session_id, role="assistant",
                         kind="edit_proposed", payload={"edit_id": pending_edit.id},
                         content=f"[Proposed plan edit #{pending_edit.id}: {pending_edit.summary}]",
+                        prompt_version=pv,
                     ))
                     db.commit()
                     yield {"type": "edit_proposed", "edit": edit_dict(pending_edit)}
@@ -315,7 +337,7 @@ def run_chat(db: Session, user: User, session_id: str | None, user_message: str,
         final = "\n\n".join(t.strip() for t in round_texts if t.strip())
         log_persona_lint(settings.get("coach_style"), final, "chat")
         db.add(ChatMessage(user_id=user.id, session_id=session_id, role="assistant",
-                           content=final))
+                           content=final, prompt_version=pv))
         db.commit()
         yield {"type": "done"}
     except ChatStopped:
@@ -324,7 +346,7 @@ def run_chat(db: Session, user: User, session_id: str | None, user_message: str,
         partial = "\n\n".join(t.strip() for t in round_texts if t.strip())
         if partial:
             db.add(ChatMessage(user_id=user.id, session_id=session_id, role="assistant",
-                               content=partial, payload={"stopped": True}))
+                               content=partial, payload={"stopped": True}, prompt_version=pv))
             db.commit()
         yield {"type": "stopped"}
     except Exception as e:  # noqa: BLE001

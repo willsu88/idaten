@@ -648,6 +648,44 @@ export interface UsageSummary {
 export interface CoachToggles {
   weekly_summary: boolean;
   execution_analysis: boolean;
+  qa: boolean;
+}
+
+/** GET /api/qa/summary (admin only) - the nightly coach QA scorecard (ADR
+ * 0016). Counts are verdicts; `na` is excluded from every pass rate. */
+export interface QaVerdictCounts {
+  pass: number;
+  fail: number;
+  na: number;
+}
+
+export interface QaVersion extends QaVerdictCounts {
+  prompt_version: string;
+  pass_rate: number | null; // over applicable (pass+fail); null when none
+}
+
+export interface QaItem {
+  key: string;
+  weeks: Array<QaVerdictCounts & { week_start: string }>; // oldest first
+  versions: QaVersion[]; // first-seen order
+  regression: boolean; // newest version underperforms with enough sessions
+}
+
+export interface QaFail {
+  scored_at: string;
+  artifact_date: string | null;
+  session_id: string;
+  rubric_key: string;
+  reason: string;
+  prompt_version: string | null;
+}
+
+export interface QaSummary {
+  rubric_version: string;
+  judge_model: string;
+  enabled: boolean;
+  items: QaItem[];
+  recent_fails: QaFail[]; // newest first
 }
 
 /** POST /api/auth/invites and POST /api/auth/users/{id}/reset_link */

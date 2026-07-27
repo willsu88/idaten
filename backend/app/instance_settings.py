@@ -20,7 +20,9 @@ from .models import InstanceSetting
 # The call sites an operator may turn off. The daily review is deliberately
 # absent in v1: it is load-bearing (plan proposals, Garmin plan refresh, the
 # Today page anchor) - see the spec's open decision before adding it here.
-TOGGLEABLE_CALL_SITES = ("weekly_summary", "execution_analysis")
+# "qa" is the nightly scorecard job (ADR 0016): off = the judge never runs and
+# nothing leaves the perimeter; skipped nights are never backfilled.
+TOGGLEABLE_CALL_SITES = ("weekly_summary", "execution_analysis", "qa")
 
 
 def toggle_key(call_site: str) -> str:

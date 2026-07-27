@@ -56,18 +56,24 @@ class LLMClient(Protocol):
 
 
 def make_client(
-    provider: str | None = None, *, user_id: int | None = None, call_site: str | None = None
+    provider: str | None = None,
+    *,
+    user_id: int | None = None,
+    call_site: str | None = None,
+    model: str | None = None,
 ) -> LLMClient:
     """Build a provider client. `user_id` + `call_site` bind token/cost
     accounting for every call this client makes (see app/usage.py); omit them
-    for unattributed calls (tests)."""
+    for unattributed calls (tests). `model` overrides the provider's configured
+    model - used by the QA judge, which is pinned independently of the coach
+    (ADR 0016)."""
     provider = (provider or config.llm_provider).lower()
     if provider == "anthropic":
         from .anthropic_client import AnthropicClient
 
-        return AnthropicClient(user_id=user_id, call_site=call_site)
+        return AnthropicClient(user_id=user_id, call_site=call_site, model=model)
     if provider == "openai":
         from .openai_client import OpenAIClient
 
-        return OpenAIClient(user_id=user_id, call_site=call_site)
+        return OpenAIClient(user_id=user_id, call_site=call_site, model=model)
     raise ValueError(f"Unknown LLM provider: {provider!r}")

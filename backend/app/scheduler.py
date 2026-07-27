@@ -256,6 +256,19 @@ def catch_up() -> None:
         daily_job()
         return
     _retry_pending_reviews()
+    _qa_catch_up()
+
+
+def _qa_catch_up() -> None:
+    """QA is idempotent (gradeable = quiet-since-midnight and not yet scored),
+    so re-running on the catch-up tick is a free no-op when the 00:30 run
+    happened and the recovery path when the machine slept through it."""
+    from . import qa
+
+    try:
+        qa.qa_job()
+    except Exception:  # noqa: BLE001
+        log.exception("qa catch-up failed")
 
 
 def _retry_pending_reviews() -> None:
@@ -315,6 +328,11 @@ def start_scheduler() -> BackgroundScheduler:
     sched = BackgroundScheduler(timezone=_TZ)
     sched.add_job(daily_job, "cron", hour=config.plan_hour, minute=5, id="daily")
     sched.add_job(catch_up, "interval", minutes=30, id="catch_up")
+    # Nightly QA scorecard (ADR 0016): shortly after local midnight, once
+    # yesterday's sessions have become gradeable. Catch-up covers missed nights.
+    from . import qa
+
+    sched.add_job(qa.qa_job, "cron", hour=0, minute=30, id="qa")
     sched.start()
     # Catch up shortly after boot without blocking startup
     threading.Timer(5.0, catch_up).start()

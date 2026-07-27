@@ -27,6 +27,7 @@ import type {
   Niggle,
   PendingEdit,
   PlanDay,
+  QaSummary,
   Race,
   Settings,
   StrengthSession,
@@ -454,6 +455,9 @@ export const api = {
     }),
 
   feedbackSummary: (days = 90) => request<FeedbackSummary>(`/api/feedback/summary?days=${days}`),
+
+  /** Admin: the nightly coach QA scorecard (ADR 0016). */
+  qaSummary: () => request<QaSummary>("/api/qa/summary"),
 
   sync: () =>
     request<{ ok: boolean; started?: boolean; already_running?: boolean }>("/api/sync", {

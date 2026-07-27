@@ -168,7 +168,7 @@ def test_admin_reads_defaults_all_on(client, db, user):
     _login(client)
     r = client.get("/api/auth/coach_toggles")
     assert r.status_code == 200
-    assert r.json() == {"weekly_summary": True, "execution_analysis": True}
+    assert r.json() == {"weekly_summary": True, "execution_analysis": True, "qa": True}
 
 
 def test_admin_put_is_partial_and_persists(client, db, user):
@@ -176,10 +176,10 @@ def test_admin_put_is_partial_and_persists(client, db, user):
     _login(client)
     r = client.put("/api/auth/coach_toggles", json={"weekly_summary": False})
     assert r.status_code == 200
-    assert r.json() == {"weekly_summary": False, "execution_analysis": True}
+    assert r.json() == {"weekly_summary": False, "execution_analysis": True, "qa": True}
     # Unmentioned keys are untouched; the write is durable.
     r2 = client.get("/api/auth/coach_toggles")
-    assert r2.json() == {"weekly_summary": False, "execution_analysis": True}
+    assert r2.json() == {"weekly_summary": False, "execution_analysis": True, "qa": True}
     assert instance_settings.call_site_enabled(db, "weekly_summary") is False
 
 
