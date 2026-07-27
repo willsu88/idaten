@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from . import metrics
 from .metrics import derive_hr_band, execution_score
 from .models import Activity, PlanDay, TrainingPlan
+from .planner import QUALITY_TYPES
 
 # Half-width of the target band around a single prescribed pace (m/s), matching
 # what push.py writes to the watch. execution_score adds decay beyond it.
@@ -41,10 +42,16 @@ def _pace_band(pace: str | None) -> tuple[float, float] | None:
     return (mps - PACE_BAND_MPS, mps + PACE_BAND_MPS)
 
 
-def _step_segment(hr_low, hr_high, pace, dur_min, dist_km, label) -> dict | None:
-    """One prescription step -> a scoring segment ({axis, low, high, duration_s})."""
+def _step_segment(hr_low, hr_high, pace, dur_min, dist_km, label,
+                  zones=None, quality=False) -> dict | None:
+    """One prescription step -> a scoring segment ({axis, low, high, duration_s}).
+
+    Legacy days may still carry a degenerate stored band (ADR 0017 predates
+    them); never score against one - widen it through the zone rule instead.
+    """
     dur = float(dur_min) * 60 if dur_min else None
     if hr_low and hr_high:
+        hr_low, hr_high = metrics.ensure_hr_band(hr_low, hr_high, zones, quality)
         axis, low, high = "hr", float(hr_low), float(hr_high)
     else:
         band = _pace_band(pace)
@@ -61,18 +68,22 @@ def _step_segment(hr_low, hr_high, pace, dur_min, dist_km, label) -> dict | None
 def _idaten_segments(day: PlanDay, zones: dict | None) -> list[dict]:
     """Segments from an Idaten-authored prescription (structured or simple)."""
     segs: list[dict] = []
+    quality = day.workout_type in QUALITY_TYPES
     if day.steps:
         for block in day.steps:
             for _ in range(int(block.get("repeat") or 1)):
                 for s in (block.get("steps") or []):
+                    kind = s.get("kind") or "work"
                     seg = _step_segment(s.get("target_hr_low"), s.get("target_hr_high"),
                                         s.get("target_pace"), s.get("duration_min"),
-                                        s.get("distance_km"), s.get("kind") or "work")
+                                        s.get("distance_km"), kind,
+                                        zones, quality and kind == "work")
                     if seg:
                         segs.append(seg)
     else:
         seg = _step_segment(day.target_hr_low, day.target_hr_high, day.target_pace,
-                            day.duration_min, day.distance_km, day.workout_type)
+                            day.duration_min, day.distance_km, day.workout_type,
+                            zones, quality)
         if seg:
             segs.append(seg)
     return segs

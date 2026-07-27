@@ -53,6 +53,20 @@ It is a standalone artifact: it does not belong to any activity or daily review,
 The fixed window a weekly summary covers: Monday through Sunday in the app timezone, closing at local midnight Sunday.
 A week is only summarized after it has closed.
 
+### HR zones
+The athlete's per-zone heart-rate boundaries (z1-z5, each a bpm range).
+Garmin-observed boundaries are authoritative when available; LTHR-derived zones are the fallback until a real set has been observed.
+One source serves both planner targets and execution scoring; the two must never use different zone tables.
+
+### HR target band
+The bpm range a plan day or workout step prescribes, anchored on the athlete's HR zones.
+A band is always a real range: a zero-width band (low equal to high) is invalid data, never a "tight target".
+Distinct from HR zones: the zones are the athlete's physiology map, the band is one workout's prescription drawn from it.
+
+### Plan mode
+Whether Idaten edits or writes the training week: `editor` means an active Garmin Coach plan is the base and Idaten produces diffs against it; `author` means Idaten writes the week itself.
+Editor is automatic whenever a Garmin plan is active; a member can force author in Settings.
+
 ### Instance setting
 Operator policy that applies to the whole deployment, every member equally, admin included.
 Distinct from a member setting (per-user preference) and from a server-owned member setting like the chat message limit (per-user policy).

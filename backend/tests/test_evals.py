@@ -195,7 +195,9 @@ def test_planner_builds_structured_week_within_budget(db, user):
     assert len(days) >= 6
 
     dicts = [{"workout_type": d.workout_type, "duration_min": d.duration_min,
-              "distance_km": d.distance_km} for d in days[:7]]
+              "distance_km": d.distance_km, "target_hr_low": d.target_hr_low,
+              "target_hr_high": d.target_hr_high, "steps": d.steps,
+              "date": d.date.isoformat()} for d in days[:7]]
     assert check_week(dicts, budget) == [], "model violated the deterministic week checks"
 
     quality = [d for d in days[:7] if d.workout_type in QUALITY_TYPES]

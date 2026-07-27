@@ -40,7 +40,9 @@ def test_materialize_creates_base_days(db, user):
     thr = db.get(PlanDay, (user.id, TODAY))
     assert thr.workout_type == "tempo"
     assert thr.title == "Threshold"
-    assert thr.target_hr_low == 172 and thr.target_hr_high == 172
+    # The single 172bpm prescription becomes a real band (ADR 0017); with no
+    # zones cached the fallback is ±7.
+    assert (thr.target_hr_low, thr.target_hr_high) == (165, 179)
     assert thr.rationale == ""  # base plan carries no Idaten rationale
 
     rest = db.get(PlanDay, (user.id, TODAY + dt.timedelta(days=1)))
@@ -50,7 +52,7 @@ def test_materialize_creates_base_days(db, user):
 
     long = db.get(PlanDay, (user.id, TODAY + dt.timedelta(days=2)))
     assert long.workout_type == "long_run"
-    assert long.target_hr_low == 145
+    assert (long.target_hr_low, long.target_hr_high) == (138, 152)
 
 
 def test_materialize_is_idempotent(db, user):

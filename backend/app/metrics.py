@@ -517,6 +517,37 @@ def hr_zones_from_garmin(payload: list | None) -> dict[str, list[int]] | None:
     return out or None
 
 
+# A stored HR target band is always a real range (ADR 0017): anything narrower
+# is invalid data and gets resolved to the athlete's zone band. The fixed
+# fallback half-width approximates a typical z2 half-width.
+MIN_HR_BAND_WIDTH = 5
+HR_BAND_FALLBACK_HALFWIDTH = 7
+
+
+def widen_hr_target(hr: int, zones: dict | None, quality: bool = False) -> list[int]:
+    """A single prescribed bpm -> the athlete's zone band containing it.
+
+    On an exact zone boundary the intent disambiguates: quality work means the
+    higher zone, everything else the lower. Without zones, or when the number
+    falls outside every zone, a fixed band around the number - never a snap
+    into the nearest zone, which would relocate the prescribed effort.
+    """
+    matches = [band for _, band in sorted((zones or {}).items())
+               if band[0] <= hr <= band[1]]
+    if matches:
+        return list(matches[-1] if quality else matches[0])
+    return [hr - HR_BAND_FALLBACK_HALFWIDTH, hr + HR_BAND_FALLBACK_HALFWIDTH]
+
+
+def ensure_hr_band(low, high, zones: dict | None, quality: bool = False) -> tuple:
+    """Repair a degenerate HR band (width < MIN_HR_BAND_WIDTH) by widening its
+    midpoint through the zone rule; a real band or a missing bound passes
+    through untouched."""
+    if not low or not high or high - low >= MIN_HR_BAND_WIDTH:
+        return low, high
+    return tuple(widen_hr_target(round((low + high) / 2), zones, quality))
+
+
 def pace_str(speed_mps: float | None) -> str | None:
     """m/s -> 'M:SS' min/km."""
     if not speed_mps or speed_mps <= 0:

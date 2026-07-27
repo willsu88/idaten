@@ -58,7 +58,7 @@ def test_revert_restores_garmin_workout(db, user):
     thr = db.get(PlanDay, (user.id, TODAY))
     assert thr.workout_type == "tempo"      # back to Garmin's Threshold
     assert thr.title == "Threshold"
-    assert thr.target_hr_low == 172
+    assert (thr.target_hr_low, thr.target_hr_high) == (165, 179)  # 172 ±7, ADR 0017
     assert thr.rationale == ""              # Idaten note dropped
 
 

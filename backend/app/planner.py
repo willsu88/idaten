@@ -805,8 +805,47 @@ def pace_violations(days: list[dict], profile: dict | None) -> list[str]:
     return out
 
 
+def _iter_hr_bands(d: dict):
+    """Every HR band a day prescribes: (low, high, where) for the day-level
+    target and every step in every block."""
+    for block in d.get("steps") or []:
+        for s in block.get("steps") or []:
+            yield s.get("target_hr_low"), s.get("target_hr_high"), \
+                f"step {s.get('kind') or 'work'}"
+    yield d.get("target_hr_low"), d.get("target_hr_high"), "day"
+
+
+def hr_band_violations(days: list[dict]) -> list[str]:
+    """Deterministic guard (ADR 0017): a prescribed HR band, day-level or in
+    any step, must be a real range - never narrower than MIN_HR_BAND_WIDTH."""
+    out: list[str] = []
+    for d in days:
+        for low, high, where in _iter_hr_bands(d):
+            if low and high and high - low < metrics.MIN_HR_BAND_WIDTH:
+                out.append(
+                    f"{d.get('date')} ({d.get('workout_type')}, {where}): HR band "
+                    f"{low}-{high} is not a real range - prescribe the athlete's "
+                    f"zone band (at least {metrics.MIN_HR_BAND_WIDTH} bpm wide)")
+    return out
+
+
+# The zone family each workout type should sit in (z-index range); a band more
+# than one zone away from it is implausible. Race is goal-dependent - skipped.
+_TYPE_ZONES = {"easy_run": (1, 2), "recovery": (1, 2), "long_run": (1, 2),
+               "tempo": (3, 4), "intervals": (4, 5)}
+
+
+def _zone_index(hr: float, zones: dict) -> int | None:
+    for i in range(1, 6):
+        band = zones.get(f"z{i}")
+        if band and band[0] <= hr <= band[1]:
+            return i
+    return None
+
+
 def check_week(days: list[dict], budget: int,
-               chronic_daily_load: float | None = None) -> list[str]:
+               chronic_daily_load: float | None = None, *,
+               hr_zones: dict | None = None) -> list[str]:
     """Deterministic post-checks on a generated week; returns warning strings.
 
     The prompt states these rules; this verifies the model obeyed. Warnings are
@@ -838,6 +877,25 @@ def check_week(days: list[dict], budget: int,
     hard = sum(minutes(d) for d in quality)
     if total > 0 and hard / total > 0.35:
         warnings.append(f"hard time {hard / total:.0%} of week (target ~20%, cap 35%)")
+
+    warnings.extend(hr_band_violations(days))
+    if hr_zones:
+        for d in days:
+            lo_z, hi_z = _TYPE_ZONES.get(d.get("workout_type"), (None, None))
+            if lo_z is None:
+                continue
+            for low, high, where in _iter_hr_bands(d):
+                # Only work effort answers to the workout type's zone family:
+                # a z1 recovery float inside an interval session is correct.
+                if not low or not high or where not in ("day", "step work"):
+                    continue
+                z_low, z_high = _zone_index(low, hr_zones), _zone_index(high, hr_zones)
+                if (z_low is None or z_high is None
+                        or z_low < lo_z - 1 or z_high > hi_z + 1):
+                    warnings.append(
+                        f"{d.get('date')} ({d.get('workout_type')}, {where}): HR band "
+                        f"{low}-{high} is not contained in the plausible zone range "
+                        f"z{lo_z}-z{hi_z} for this workout type")
     return warnings
 
 
@@ -884,8 +942,29 @@ def generate_plan(db: Session, user_id: int, source: str = "daily_job") -> list[
         days = [d for d in result.get("days", []) if d.get("date")]
         for v in pace_violations(days, snapshot.get("recent_pace_profile")):
             log.warning("plan pace guard STILL violated (user %s): %s", user_id, v)
+    # HR band guard (ADR 0017): same corrective-retry pattern as the pace guard.
+    hr_violations = hr_band_violations(days)
+    if hr_violations:
+        log.warning("plan HR band guard (user %s), retrying once: %s",
+                    user_id, hr_violations)
+        result = client.complete_structured(
+            system=system,
+            messages=messages + [
+                {"role": "assistant", "content": json.dumps(result)},
+                {"role": "user", "content":
+                    "These HR targets are not real bands:\n- " + "\n- ".join(hr_violations)
+                    + "\nRevise the plan so every HR band is the athlete's zone "
+                    "band from hr_zones, never a single number."},
+            ],
+            schema=PLAN_SCHEMA,
+            name="training_plan",
+        )
+        days = [d for d in result.get("days", []) if d.get("date")]
+        for v in hr_band_violations(days):
+            log.warning("plan HR band guard STILL violated (user %s): %s", user_id, v)
     chronic = (snapshot.get("load_ramp") or {}).get("chronic_daily_load")
-    for warning in check_week(days, snapshot["quality_budget"], chronic):
+    for warning in check_week(days, snapshot["quality_budget"], chronic,
+                              hr_zones=snapshot.get("hr_zones")):
         log.warning("plan check (user %s): %s", user_id, warning)
     changed = apply_plan_days(db, user_id, days, source, result.get("adjustment_note", ""))
     # Strength lane (author mode places directly — the athlete's own plan, no
@@ -960,12 +1039,17 @@ def _coach_day_fields(db: Session, user_id: int, date: dt.date, task: dict) -> d
         }
     wt = _coach_workout_type(task)
     hr = _parse_hr(task.get("description"))
+    # Garmin prescribes a single bpm; a stored target is always a real band
+    # (ADR 0017), so resolve it into the athlete's zone containing the number.
+    band = (metrics.widen_hr_target(hr, _hr_zones(db, user_id),
+                                    quality=wt in QUALITY_TYPES)
+            if hr else [None, None])
     return {
         "workout_type": wt,
         "title": task.get("name") or ("Rest" if wt == "rest" else wt.replace("_", " ").title()),
         "description": task.get("description") or "",
         "duration_min": task.get("duration_min"),
-        "target_hr_low": hr, "target_hr_high": hr,
+        "target_hr_low": band[0], "target_hr_high": band[1],
     }
 
 
@@ -1253,6 +1337,9 @@ def create_pending_edit(
             "note": "Re-propose with paces grounded in the athlete's actual "
                     "recent paces (easy days at or slower than typical_pace).",
         }
+    # HR band clamp (ADR 0017): a degenerate band is widened to the athlete's
+    # zone band - the same band the mirror rule produces - rather than rejected.
+    days = [_clamp_hr_bands(d, _hr_zones(db, user_id)) for d in days]
     current: list[dict | None] = []
     for d in days:
         try:
@@ -1273,6 +1360,27 @@ def create_pending_edit(
     db.add(edit)
     db.commit()
     return edit, None
+
+
+def _clamp_hr_bands(d: dict, zones: dict | None) -> dict:
+    """A copy of day `d` with every degenerate HR band (day-level and per-step)
+    widened through the zone rule; days without HR targets pass through as-is."""
+    quality = d.get("workout_type") in QUALITY_TYPES
+    low, high = metrics.ensure_hr_band(
+        d.get("target_hr_low"), d.get("target_hr_high"), zones, quality)
+    out = {**d, "target_hr_low": low, "target_hr_high": high}
+    if d.get("steps"):
+        out["steps"] = [
+            {**block, "steps": [
+                {**s, "target_hr_low": band[0], "target_hr_high": band[1]}
+                for s in (block.get("steps") or [])
+                for band in [metrics.ensure_hr_band(
+                    s.get("target_hr_low"), s.get("target_hr_high"), zones,
+                    quality and s.get("kind") == "work")]
+            ]}
+            for block in d["steps"]
+        ]
+    return out
 
 
 # One changed day in a review proposal — the same shape the planner emits, so
