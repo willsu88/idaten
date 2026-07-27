@@ -102,6 +102,8 @@ For a layer 3-4 case, the steps are mechanical:
 4. Assert any state or string facts the seeded world makes checkable (`assert "30" in reply` works because the fixture knows the true total).
 5. Only then, judge the residue: one criterion, phrased so a yes/no answer exists, and the test name states it - `test_exhausted_proposes_edit_and_never_claims_applied` *is* its criterion.
 
+This procedure is also encoded as a repo skill (`.claude/skills/add-eval-case/SKILL.md`) so agents follow it without re-deriving it.
+
 ## Cross-references
 
 - ADR 0005: the judge calls `make_client()` - evals ride the same `LLMClient` seam as production, so there is no separate test-only provider path to drift.

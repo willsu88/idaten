@@ -18,3 +18,9 @@ A first-time visitor sees the product surface and never finds the engineering re
 - Written in the same voice the seam-repo README will use; the two link to each other (seam README carries the paragraph-level echo of the testing layer map, links to docs/TESTING.md as the worked example).
 - No claims ahead of reality: layer 5 is designed-not-built and stays labeled that way everywhere.
 - Fresh-session protocol: read the current README first without context, list what a cold reader misses, then restructure.
+
+## Also in scope: root CLAUDE.md
+
+The repo has no root agent-instructions file.
+Write a `CLAUDE.md` in the same pass and voice: what to read first (CONTEXT.md, docs/TESTING.md, the ADR index), how to run the test gate (`./start.sh`), and a pointer to the repo skills (`.claude/skills/`).
+Claude Code discovers the skills automatically; the file exists for other agents and for humans reading the repo as a contribution target.
