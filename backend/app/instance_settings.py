@@ -34,6 +34,11 @@ def put_value(db: Session, key: str, value) -> None:
     db.commit()
 
 
+def get_value(db: Session, key: str, default=None):
+    row = db.get(InstanceSetting, key)
+    return default if row is None else row.value
+
+
 def call_site_enabled(db: Session, call_site: str) -> bool:
     """Absent = enabled; any falsy stored value (False, 0, "", None) reads as
     disabled, so no writer can accidentally store a value this reads as on."""

@@ -11,7 +11,6 @@ import { AlertTriangle, ShieldCheck } from "lucide-react";
 import type { QaSummary } from "@/lib/types";
 import { api, safe } from "@/lib/api";
 import {
-  applicable,
   currentWeek,
   hasData,
   pctLabel,

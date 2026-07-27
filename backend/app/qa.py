@@ -117,11 +117,26 @@ def _local_midnight_utc(now_utc: dt.datetime) -> dt.datetime:
     return local_midnight.astimezone(dt.timezone.utc).replace(tzinfo=None)
 
 
+# Forward-only resume (ADR 0003 semantics): a disabled nightly run advances
+# this watermark to its midnight, marking everything quiet before it as
+# deliberately skipped. A night the job never ran (downtime) leaves the
+# watermark alone, so an accidental miss is caught up while a toggled-off
+# night is never backfilled.
+_SKIP_WATERMARK_KEY = "qa_skipped_until"
+
+
+def _skip_watermark(db: Session) -> dt.datetime | None:
+    raw = instance_settings.get_value(db, _SKIP_WATERMARK_KEY)
+    return dt.datetime.fromisoformat(raw) if raw else None
+
+
 def gradeable_sessions(db: Session, now_utc: dt.datetime | None = None) -> list[tuple[int, str]]:
     """(user_id, session_id) pairs due for judging: quiet since local midnight,
-    and either never scored or resumed after their last scoring (re-grade)."""
+    last active after any skip watermark, and either never scored or resumed
+    after their last scoring (re-grade)."""
     now_utc = now_utc or dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
     midnight = _local_midnight_utc(now_utc)
+    floor = _skip_watermark(db)
     last_msg = (
         select(
             ChatMessage.user_id,
@@ -146,6 +161,7 @@ def gradeable_sessions(db: Session, now_utc: dt.datetime | None = None) -> list[
               isouter=True)
         .where(
             last_msg.c.last_at < midnight,
+            *([last_msg.c.last_at >= floor] if floor is not None else []),
             (last_scored.c.scored_at.is_(None))
             | (last_scored.c.scored_at < last_msg.c.last_at),
         )
@@ -337,15 +353,18 @@ def qa_summary(db: Session, weeks: int = 8, fails_limit: int = 20) -> dict:
 
 def qa_job() -> dict:
     """The nightly run: score everything gradeable. Idempotent - a re-run finds
-    nothing gradeable and makes zero judge calls. Toggled off = no-op, and
-    skipped sessions are picked up by the next enabled run only if still
-    unscored (forward-only in practice: they usually are scored then)."""
+    nothing gradeable and makes zero judge calls. Toggled off = no judge calls,
+    and the skip watermark advances so those sessions are never backfilled on
+    re-enable (forward-only); a resumed session re-enters via its new message."""
     db = session()
     try:
+        now_utc = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
         if not instance_settings.call_site_enabled(db, "qa"):
+            instance_settings.put_value(
+                db, _SKIP_WATERMARK_KEY, _local_midnight_utc(now_utc).isoformat())
             log.info("qa: disabled by toggle, skipping")
             return {"scored_sessions": 0, "verdicts": 0, "disabled": True}
-        due = gradeable_sessions(db)
+        due = gradeable_sessions(db, now_utc)
         scored = verdicts = 0
         for user_id, session_id in due:
             try:

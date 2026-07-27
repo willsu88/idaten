@@ -516,7 +516,8 @@ class QaScore(Base):
 
 class LlmUsage(Base):
     """One row per LLM API call, written at the LLMClient seam. `call_site` is
-    the feature that made the call (plan | review | execution_analysis | chat),
+    the feature that made the call (plan | review | execution_analysis | chat |
+    weekly_summary | qa),
     the dimension the provider console can't give us. `cost_usd` is derived from
     a price map at write time (see app/usage.py); tokens are exact."""
 

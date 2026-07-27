@@ -161,16 +161,38 @@ def test_qa_job_scores_everything_then_is_idempotent(db, user, monkeypatch):
     assert len(stub.calls) == 3  # the re-run made zero judge calls
 
 
-def test_qa_job_toggled_off_never_calls_the_judge(db, user, monkeypatch):
+def test_qa_job_toggled_off_never_calls_the_judge_or_backfills(db, user, monkeypatch):
     _seed_job_session(db, user.id)
     stub = StubJudge([PASS, PASS, PASS])
     _stub(monkeypatch, stub)
     instance_settings.set_call_site_enabled(db, "qa", False)
     assert qa.qa_job()["disabled"] is True
     assert stub.calls == []
-    # Re-enabling grades forward: the still-unscored session is picked up.
+    # Forward-only resume: the disabled run advanced the skip watermark, so
+    # re-enabling never backfills the night it deliberately skipped.
     instance_settings.set_call_site_enabled(db, "qa", True)
-    assert qa.qa_job()["scored_sessions"] == 1
+    assert qa.qa_job()["scored_sessions"] == 0
+    assert stub.calls == []
+
+
+def test_skipped_session_regains_gradeability_only_by_resuming(db, user):
+    _seed_session(db, user.id, "s1", at=YESTERDAY)
+    # A disabled nightly run stamped tonight's midnight as the watermark.
+    instance_settings.put_value(db, qa._SKIP_WATERMARK_KEY, MIDNIGHT.isoformat())
+    assert qa.gradeable_sessions(db, NOW) == []
+    # Resumption moves the session's last message past the watermark; once the
+    # session is quiet again it is judged in full - nothing stays half-skipped.
+    _msg(db, user.id, "s1", "user", "actually...", TODAY)
+    assert qa.gradeable_sessions(db, NOW + dt.timedelta(days=1)) == [(user.id, "s1")]
+
+
+def test_a_missed_night_is_caught_up(db, user, monkeypatch):
+    # Downtime, not a toggle: the job simply never ran, so no watermark was
+    # written and the two-day-old quiet session is still due.
+    _seed_session(db, user.id, "old", at=YESTERDAY - dt.timedelta(days=2))
+    assert qa.gradeable_sessions(db, NOW) == [(user.id, "old")]
+    _stub(monkeypatch, StubJudge([PASS, PASS, NA]))
+    assert qa.qa_job() == {"scored_sessions": 1, "verdicts": 3, "disabled": False}
 
 
 def test_one_poisoned_session_does_not_kill_the_rest(db, user, monkeypatch):
