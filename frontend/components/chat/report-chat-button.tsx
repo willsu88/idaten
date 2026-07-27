@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 
 export function ReportChatButton() {
-  const { sessionId } = useChat();
+  const { sessionId, sessions } = useChat();
   const { toast } = useToast();
   const [open, setOpen] = React.useState(false);
   const [comment, setComment] = React.useState("");
@@ -24,7 +24,12 @@ export function ReportChatButton() {
 
   // No session yet (fresh page, nothing sent) - nothing to report.
   if (!sessionId) return null;
-  const reported = reportedSession === sessionId;
+  // Server flag survives reloads; local state covers the just-reported session
+  // before the list refreshes. A reported session stays reported (the disabled
+  // button also keeps a resend from wiping the original comment).
+  const reported =
+    reportedSession === sessionId ||
+    (sessions.find((s) => s.id === sessionId)?.reported ?? false);
 
   const submit = async () => {
     setSending(true);

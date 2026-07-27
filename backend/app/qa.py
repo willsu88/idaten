@@ -177,10 +177,12 @@ def _as_local_date(d: dt.datetime) -> dt.date:
     return d.astimezone(_TZ).date()
 
 
-def _render_transcript(
+def render_transcript(
     db: Session, user_id: int, session_id: str
 ) -> tuple[str, str | None, dt.date | None]:
     """The judge's view of one session: turns plus tool ground truth, in order.
+    Public on purpose: member reports (feedback surface `chat_session`) freeze
+    this same view, so what the admin reads is what the judge graded.
     Returns (transcript, prompt_version, artifact_date) - the version from the
     latest stamped row (the instructions that produced the session's last
     assistant turn) and the local date of the last message (the trend axis)."""
@@ -231,7 +233,7 @@ def judge_one(client, item: RubricItem, transcript: str) -> tuple[str, str]:
 def judge_session(db: Session, user_id: int, session_id: str) -> int:
     """Judge one session against every applicable rubric item; upsert QaScore
     rows. Returns the number of verdicts written."""
-    transcript, prompt_version, artifact_date = _render_transcript(db, user_id, session_id)
+    transcript, prompt_version, artifact_date = render_transcript(db, user_id, session_id)
     if not transcript:
         return 0
     client = make_client(

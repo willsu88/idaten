@@ -1739,3 +1739,10 @@ Member-initiated reports and nightly judge verdicts stay distinguishable by cons
 
 - The chat page header gains a "Report" button (hidden until the session has messages): a confirm dialog with an optional comment sends the report; the button then reads "Reported" for that session.
 - The admin "Coach quality" card labels the surface "Reported chat" and shows the session id prefix on each report.
+
+## v1.38 - chat report state survives reload; reports are strictly negative
+
+Code-review follow-ups to v1.37.
+
+- `GET /api/chat/sessions`: each session gains `reported: boolean` - whether the caller has filed a `chat_session` report on it. The Report button reads this, so "Reported" persists across reloads and history reopens (and a disabled button keeps a resend from overwriting the original comment).
+- `POST /api/feedback` with `surface: "chat_session"` now rejects any `rating` other than `-1` with 422, enforcing the v1.37 invariant instead of merely documenting it.

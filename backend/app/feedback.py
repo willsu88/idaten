@@ -68,9 +68,9 @@ def _resolve_artifact(db: Session, user_id: int, surface: str,
         # A member reporting a whole chat session (the QA fast-follow). The
         # frozen text is the same transcript view the nightly judge grades -
         # member-initiated, so sharing it with the admin is the point.
-        from .qa import _render_transcript
+        from .qa import render_transcript
 
-        transcript, pv, _date = _render_transcript(db, user_id, ref)
+        transcript, pv, _date = render_transcript(db, user_id, ref)
         if not transcript:
             return None
         return transcript, None, pv
@@ -112,6 +112,15 @@ def record(db: Session, user_id: int, surface: str, ref: str,
     row.prompt_version = pv
     db.commit()
     return row
+
+
+def reported_session_ids(db: Session, user_id: int) -> set[str]:
+    """Chat sessions this member has reported - drives the persistent
+    "Reported" button state (and blocks accidental comment-clobbering resends)."""
+    return set(db.scalars(
+        select(Feedback.artifact_ref).where(Feedback.user_id == user_id,
+                                            Feedback.surface == "chat_session")
+    ).all())
 
 
 def feedback_state(db: Session, user_id: int, surface: str, ref) -> dict | None:

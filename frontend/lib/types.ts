@@ -705,6 +705,7 @@ export interface ChatSession {
   id: string;
   created_at: string;
   title: string;
+  reported: boolean; // member filed a chat_session report on it
 }
 
 /** Daily chat message quota: user-sent messages only, resets at local midnight.

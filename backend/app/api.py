@@ -1783,6 +1783,10 @@ def post_feedback(body: FeedbackBody, db: Session = Depends(get_db),
         raise HTTPException(status_code=422, detail="unknown surface")
     if body.rating not in (1, -1, None):
         raise HTTPException(status_code=422, detail="rating must be 1, -1 or null")
+    if body.surface == "chat_session" and body.rating != -1:
+        # The contract (v1.37) defines a report as -1; anything else would be
+        # invisible to the admin's negatives list - reject rather than swallow.
+        raise HTTPException(status_code=422, detail="a chat report is always rating -1")
     row = feedback_mod.record(db, user.id, body.surface, body.ref,
                               body.rating, body.tags, body.comment[:1000])
     if row is None:
@@ -2066,6 +2070,7 @@ def chat_sessions(db: Session = Depends(get_db), user: User = Depends(current_us
         .where(ChatMessage.user_id == user.id)
         .order_by(ChatMessage.created_at)
     ).all()
+    reported = feedback_mod.reported_session_ids(db, user.id)
     sessions: dict[str, dict] = {}
     for sid, created_at, content in rows:
         if sid not in sessions:
@@ -2073,6 +2078,7 @@ def chat_sessions(db: Session = Depends(get_db), user: User = Depends(current_us
                 "id": sid,
                 "created_at": created_at.isoformat(),
                 "title": (content or "")[:60] or "New chat",
+                "reported": sid in reported,
             }
     return {"sessions": sorted(sessions.values(),
                                key=lambda s: s["created_at"], reverse=True),

@@ -83,7 +83,10 @@ def test_missing_or_foreign_artifact_rejected(db, user):
     assert feedback.record(db, user.id, "execution_analysis", str(a.id), 1) is None
 
 
-def _seed_chat(db, user_id, sid="cs1", pv="d30c48ffa343"):
+CHAT_PV = "d30c48ffa343"
+
+
+def _seed_chat(db, user_id, sid="cs1", pv=CHAT_PV):
     from app.models import ChatMessage
     at = dt.datetime(2026, 7, 26, 10, 0)
     db.add(ChatMessage(user_id=user_id, session_id=sid, role="user",
@@ -105,7 +108,7 @@ def test_chat_session_report_freezes_the_judged_transcript(db, user):
     # Same view the nightly QA judge grades: turns plus tool ground truth.
     assert "[tool result]" in row.artifact_text and '{"km": 42.0}' in row.artifact_text
     assert "You ran 50km." in row.artifact_text
-    assert row.prompt_version == "d30c48ffa343"
+    assert row.prompt_version == CHAT_PV
     assert row.artifact_ref == "cs1"
 
 
@@ -114,6 +117,23 @@ def test_chat_session_report_rejects_foreign_or_unknown_sessions(db, user):
     _seed_chat(db, other.id, sid="theirs")
     assert feedback.record(db, user.id, "chat_session", "theirs", -1) is None
     assert feedback.record(db, user.id, "chat_session", "no-such", -1) is None
+
+
+def test_chat_report_must_be_negative_and_marks_the_session_list(client, db):
+    from tests.conftest import make_user
+    u = make_user(db, "will", "secret1")
+    _seed_chat(db, u.id, sid="cs9")
+    r = client.post("/api/auth/login", json={"username": "will", "password": "secret1"})
+    assert r.status_code == 200
+    # The contract defines a report as rating -1; a "positive report" would be
+    # invisible to the admin's negatives list, so the API refuses it.
+    assert client.post("/api/feedback", json={
+        "surface": "chat_session", "ref": "cs9", "rating": 1}).status_code == 422
+    assert client.post("/api/feedback", json={
+        "surface": "chat_session", "ref": "cs9", "rating": -1,
+        "comment": "made up my mileage"}).status_code == 200
+    (sess,) = client.get("/api/chat/sessions").json()["sessions"]
+    assert sess["id"] == "cs9" and sess["reported"] is True
 
 
 def test_prompt_version_is_stable_hash():
