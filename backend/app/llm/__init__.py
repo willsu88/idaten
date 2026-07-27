@@ -1,58 +1,25 @@
-"""Model-agnostic LLM seam (same pattern as practice-two).
+"""App-side binding of the llm-seam library.
 
-The planner and chat agent talk ONLY to `LLMClient`, never to a provider SDK.
-Neutral shapes are OpenAI's (history + tool schemas); each concrete client
-translates at its own boundary. `make_client` is the one place a provider is
-chosen; imports are lazy so running one provider never requires the other SDK.
+The seam itself (LLMClient Protocol, neutral OpenAI-shaped wire format, both
+provider clients) lives in https://github.com/willsu88/llm-seam - extracted
+from this module per ADR 0005, consumed pinned in requirements.txt.
+
+This wrapper is the one place the library's injected dependencies are wired:
+config supplies credentials and model choice, and `on_usage` closes over
+`user_id` + `call_site` so every call is metered into the LlmUsage table
+(see app/usage.py). Call sites are unchanged - they still talk only to
+`LLMClient` via this module's `make_client`.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Callable, Protocol
+from llm_seam import LLMClient, Response, ToolCall, Usage
+from llm_seam import make_client as _make_client
 
 from ..config import config
+from ..usage import record
 
-
-@dataclass
-class ToolCall:
-    """One tool the model wants us to run. `args` is always a parsed dict."""
-
-    id: str
-    name: str
-    args: dict[str, Any]
-
-
-@dataclass
-class Response:
-    content: str | None
-    tool_calls: list[ToolCall] = field(default_factory=list)
-
-    @property
-    def is_final(self) -> bool:
-        return not self.tool_calls
-
-
-class LLMClient(Protocol):
-    """`messages` is neutral (OpenAI-shaped) history; `tools` neutral function schemas."""
-
-    def complete(
-        self, system: str, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
-    ) -> Response: ...
-
-    def stream(
-        self,
-        system: str,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
-        on_text: Callable[[str], None],
-    ) -> Response: ...
-
-    def complete_structured(
-        self, system: str, messages: list[dict[str, Any]], schema: dict[str, Any], name: str
-    ) -> dict[str, Any]:
-        """One shot constrained to a JSON schema; returns the parsed object."""
-        ...
+__all__ = ["LLMClient", "Response", "ToolCall", "Usage", "make_client"]
 
 
 def make_client(
@@ -69,11 +36,15 @@ def make_client(
     (ADR 0016)."""
     provider = (provider or config.llm_provider).lower()
     if provider == "anthropic":
-        from .anthropic_client import AnthropicClient
+        api_key, default_model = config.anthropic_api_key, config.anthropic_model
+    elif provider == "openai":
+        api_key, default_model = config.openai_api_key, config.openai_model
+    else:
+        raise ValueError(f"Unknown LLM provider: {provider!r}")
 
-        return AnthropicClient(user_id=user_id, call_site=call_site, model=model)
-    if provider == "openai":
-        from .openai_client import OpenAIClient
+    def on_usage(prov: str, mdl: str, u: Usage) -> None:
+        record(prov, mdl, u, user_id, call_site)
 
-        return OpenAIClient(user_id=user_id, call_site=call_site, model=model)
-    raise ValueError(f"Unknown LLM provider: {provider!r}")
+    return _make_client(
+        provider, api_key=api_key, model=model or default_model, on_usage=on_usage
+    )

@@ -7,28 +7,23 @@ price map below (edit `PRICES` when provider pricing changes - one place).
 
 Token normalization is uniform so the cost formula never double-counts:
 `input_tokens` is NON-cached input only, `cache_read_tokens` and
-`cache_creation_tokens` are separate. Anthropic already reports them split;
-the OpenAI boundary subtracts cached tokens out of `prompt_tokens` before
-calling `record` (see openai_client).
+`cache_creation_tokens` are separate. The llm-seam library performs that
+normalization at each provider boundary and delivers it here as its `Usage`
+type via the `on_usage` callback wired in app/llm.
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+
+from llm_seam import Usage
 
 from .db import session
 from .models import LlmUsage
 
+__all__ = ["Usage", "cost_usd", "record"]
+
 log = logging.getLogger(__name__)
-
-
-@dataclass
-class Usage:
-    input_tokens: int = 0          # non-cached input
-    output_tokens: int = 0
-    cache_read_tokens: int = 0     # cache hits (billed at a discount)
-    cache_creation_tokens: int = 0  # cache writes (Anthropic only; billed at a premium)
 
 
 # USD per 1,000,000 tokens. Rates are approximate and EDITABLE here - cost is an

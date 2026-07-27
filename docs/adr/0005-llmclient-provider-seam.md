@@ -22,4 +22,5 @@ The neutral wire format is OpenAI's shapes (history dicts + function-tool schema
 - OpenAI-as-neutral biases the abstraction: features with no OpenAI equivalent (Anthropic prompt caching) have no home in the wire format and live as client-internal special cases.
 - The protocol exposes only what providers share, so provider-unique capabilities are invisible to call sites until the protocol grows.
 - The two clients must stay behaviorally equivalent, and no conformance suite enforces it; drift is caught only by flipping the config.
-- Known extraction obstacles, recorded for the planned library split: clients read `config.*` directly instead of constructor args, and they call `usage.record()` which writes an app-DB row; both must become injected dependencies first.
+- The library split shipped 2026-07-27: the seam now lives in [willsu88/llm-seam](https://github.com/willsu88/llm-seam), consumed pinned to a release tag in `requirements.txt` (as a tag tarball URL - the backend image has no git binary).
+  Both extraction obstacles resolved as planned: config reads became constructor args, and `usage.record()` became an injected `on_usage` callback; `backend/app/llm/__init__.py` is now the thin app-side binding that wires config and closes over `user_id` + `call_site`.
