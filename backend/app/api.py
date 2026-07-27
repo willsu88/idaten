@@ -382,6 +382,9 @@ def _activity_dict(a: Activity) -> dict:
         "execution_breakdown": a.execution_breakdown,
         "execution_analysis": a.execution_analysis,
         "execution_analysis_coach": a.execution_analysis_coach,  # persona that wrote it
+        # ADR 0018: set when the run executed a different workout than the
+        # day's (edited) plan - {executed, planned, planned_source}.
+        "plan_mismatch": a.plan_mismatch,
         "gear_uuid": a.gear_uuid,
     }
 
@@ -1243,6 +1246,9 @@ def activity_detail(activity_id: int, db: Session = Depends(get_db),
         "elevation_gain_m": raw.get("elevationGain"),
         "start_time_local": raw.get("startTimeLocal"),
         "plan_day": plan_day_dict(plan) if plan else None,
+        # ADR 0018: what the execution score judged, frozen at scoring time -
+        # a later plan edit never changes it (null on pre-0018 activities).
+        "scored_prescription": a.scored_prescription,
         "analysis_feedback": feedback_mod.feedback_state(
             db, user.id, "execution_analysis", a.id),
     }

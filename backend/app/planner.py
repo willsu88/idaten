@@ -1778,6 +1778,14 @@ own score. Source 'garmin' means the watch computed the score, 'idaten' means we
 did — don't mention which. When there's no segment breakdown (a watch-scored
 run), lean on the overall score and the race/trend context instead.
 
+`plan_mismatch` (when present) means the athlete ran a DIFFERENT workout than
+the day's edited plan: they executed `plan_mismatch.executed` (the original
+workout still on their watch) instead of `plan_mismatch.planned`. The score
+already judges the workout they actually ran. Name the swap plainly and kindly
+up front ('you ran the original {executed} rather than the edited {planned}
+day') and coach the run they did — NEVER grade or scold them against the plan
+they didn't run.
+
 `context` (when present) carries the FORWARD-LOOKING picture:
 - context.race: the primary race — name, days_to_race, goal_pace/goal_time, and
   Garmin's predicted finish (predicted_pace / predicted_time_s), with vs_goal_s
@@ -1864,6 +1872,8 @@ def write_execution_analysis(db: Session, a: Activity) -> tuple[str, str]:
         "feel": a.feel,
         "context": _execution_context(db, a.user_id, a.date),
     }
+    if a.plan_mismatch:
+        payload["plan_mismatch"] = a.plan_mismatch
     result = client.complete_structured(
         system=system,
         messages=[{"role": "user",

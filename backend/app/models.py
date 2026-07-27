@@ -128,6 +128,13 @@ class Activity(Base):
     execution_score: Mapped[int | None] = mapped_column(Integer)
     execution_score_source: Mapped[str | None] = mapped_column(String)  # garmin | idaten
     execution_breakdown: Mapped[Any] = mapped_column(JSON, nullable=True)
+    # ADR 0018: the prescription the score judged, frozen at scoring time
+    # (identity + targets), and the executed-vs-planned divergence when the run
+    # executed a workout that is not the current PlanDay (e.g. a chat edit was
+    # never pushed and the athlete ran the watch's original coach workout).
+    # Null on activities scored before the ADR; consumers tolerate absence.
+    scored_prescription: Mapped[Any] = mapped_column(JSON, nullable=True)
+    plan_mismatch: Mapped[Any] = mapped_column(JSON, nullable=True)
     # Athlete's answer to "was this run an attempt at the planned workout?" when
     # auto-attribution was ambiguous. None = not asked/undecided, True = confirmed
     # (then scored), False = "just a run" (never scored, never re-asked).

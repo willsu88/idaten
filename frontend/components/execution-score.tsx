@@ -150,6 +150,13 @@ export function ExecutionScore({
   return (
     <div className="space-y-3">
       <ScoreBadge score={activity.execution_score} source={activity.execution_score_source} size="lg" />
+      {activity.plan_mismatch && (
+        <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-foreground">
+          You ran the original <span className="font-medium">{activity.plan_mismatch.executed}</span> workout
+          instead of the edited <span className="font-medium">{activity.plan_mismatch.planned}</span> day, so
+          the score judges the workout you actually ran.
+        </p>
+      )}
       {text ? (
         // The score is scored by the watch/Idaten, but the ANALYSIS is the coach's
         // voice — attributed to the persona that actually wrote it. A missing stamp

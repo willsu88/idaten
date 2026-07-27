@@ -88,3 +88,18 @@ def test_today_surfaces_completed_workout(db, user, client):
     cw = payload["completed_workout"]
     assert cw and cw["execution_score"] == 65
     assert cw["execution_analysis"] is None  # not generated until the client asks
+
+
+def test_analysis_payload_carries_plan_mismatch(db, user, client, monkeypatch):
+    # ADR 0018: the executed-vs-planned divergence rides the existing analysis
+    # call (frozen into the provenance context), so the coach can name the swap.
+    stub = StubLLM()
+    _use_llm(monkeypatch, stub)
+    a = _scored_run(db, user.id)
+    a.plan_mismatch = {"executed": "Threshold", "planned": "Base",
+                       "planned_source": "chat_edit"}
+    db.commit()
+    _login(client)
+    assert client.post(f"/api/activities/{a.id}/analysis").status_code == 200
+    db.refresh(a)
+    assert a.execution_analysis_context["plan_mismatch"]["executed"] == "Threshold"

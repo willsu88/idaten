@@ -200,13 +200,15 @@ def _enrich_run_metrics(db: Session, garmin, a: Activity, raw: dict,
     try:
         from ..settings_store import hr_zones
         from .. import execution
-        score, source, breakdown = execution.score_run(
-            db, a, full, hr_zones(db, a.user_id))
+        res = execution.score_run(db, a, full, hr_zones(db, a.user_id))
         a.execution_score, a.execution_score_source, a.execution_breakdown = (
-            score, source, breakdown)
+            res.score, res.source, res.breakdown)
+        # ADR 0018: freeze what the score judged, and the executed-vs-planned
+        # divergence when the run wasn't the current PlanDay's workout.
+        a.scored_prescription, a.plan_mismatch = res.prescription, res.mismatch
         # A scored run WAS attributed to the day's plan → mark it completed so
         # the plan machinery leaves it alone and the Week shows it done.
-        if score is not None:
+        if res.score is not None:
             execution.mark_day_completed(db, a.user_id, a.date)
     except Exception as e:  # noqa: BLE001
         log.debug("execution score failed for %s: %s", a.id, e)

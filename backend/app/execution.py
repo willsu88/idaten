@@ -22,12 +22,14 @@ label + the athlete's Garmin HR zones.
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from . import metrics
 from .metrics import derive_hr_band, execution_score
-from .models import Activity, PlanDay, TrainingPlan
+from .models import Activity, PlanDay, PlanVersion, TrainingPlan
 from .planner import QUALITY_TYPES
 
 # Half-width of the target band around a single prescribed pace (m/s), matching
@@ -127,10 +129,81 @@ def mark_day_completed(db: Session, user_id: int, date) -> None:
         db.add(day)
 
 
+class ScoreResult(NamedTuple):
+    """score_run's verdict plus its ADR 0018 provenance: the prescription the
+    score judged (frozen onto the activity by the caller) and the executed-vs-
+    planned divergence when the run didn't execute the current PlanDay."""
+
+    score: int | None = None
+    source: str | None = None
+    breakdown: list | None = None
+    prescription: dict | None = None
+    mismatch: dict | None = None
+
+
+NOT_SCORED = ScoreResult()
+
+
+def _norm_name(name: str | None) -> str:
+    """Workout-name equality is strip+casefold exact match, in one place."""
+    return (name or "").strip().casefold()
+
+
+def _executed_coach_workout(db: Session, a: Activity) -> dict | None:
+    """The Garmin coach prescription this run executed, identified by workout
+    name - the only reliable executed-workout evidence (the detail payload
+    carries no associatedWorkoutId for coach runs; ADR 0018). Checks the live
+    mirrored taskList first, then the day's PlanVersion mirror history."""
+    name = _norm_name(a.name)
+    if not name:
+        return None
+    task = _coach_task(db, a.user_id, a.date)
+    if task and _norm_name(task.get("name")) == name:
+        return {"title": task.get("name"),
+                "training_effect": task.get("training_effect")}
+    date_iso = a.date.isoformat()
+    versions = db.scalars(
+        select(PlanVersion)
+        .where(PlanVersion.user_id == a.user_id,
+               PlanVersion.source == "garmin_mirror")
+        .order_by(PlanVersion.id.desc())).all()
+    for v in versions:
+        for d in v.snapshot or []:
+            if d.get("date") == date_iso and _norm_name(d.get("name")) == name:
+                return {"title": d.get("name"),
+                        "training_effect": d.get("training_effect"),
+                        "version_id": v.id}
+    return None
+
+
+def _plan_day_prescription(day: PlanDay) -> dict:
+    return {"source": "plan_day", "version_id": day.version_id,
+            "title": day.title, "workout_type": day.workout_type,
+            "targets": {"hr_low": day.target_hr_low, "hr_high": day.target_hr_high,
+                        "pace": day.target_pace, "duration_min": day.duration_min,
+                        "distance_km": day.distance_km},
+            "steps": day.steps}
+
+
+def _coach_prescription(executed: dict | None, a: Activity,
+                        te_label: str | None) -> dict:
+    out = {"source": "garmin_coach",
+           "title": (executed or {}).get("title") or a.name,
+           "training_effect": (executed or {}).get("training_effect") or te_label}
+    if executed and executed.get("version_id"):
+        out["version_id"] = executed["version_id"]
+    return out
+
+
+def _version_source(db: Session, day: PlanDay) -> str | None:
+    v = db.get(PlanVersion, day.version_id) if day.version_id else None
+    return v.source if v else None
+
+
 def score_run(db: Session, a: Activity, full: dict | None,
-              zones: dict | None) -> tuple[int | None, str | None, list | None]:
-    """(score, source, breakdown) for a run, or (None, None, None) if it was not
-    an attempt at a planned workout. `full` is the get_activity payload."""
+              zones: dict | None) -> ScoreResult:
+    """Score a run against the prescription it executed, or NOT_SCORED if it was
+    not an attempt at a planned workout. `full` is the get_activity payload."""
     summary = (full or {}).get("summaryDTO") or {}
     meta = (full or {}).get("metadataDTO") or {}
 
@@ -148,24 +221,50 @@ def score_run(db: Session, a: Activity, full: dict | None,
     is_idaten_plan = bool(non_rest_day and _is_override(db, day))
 
     if not (is_coach or is_idaten_pushed or is_idaten_plan):
-        return None, None, None  # free / ambiguous run - not scored here
+        return NOT_SCORED  # free / ambiguous run - not scored here
 
-    prefer_idaten = is_idaten_plan or (is_idaten_pushed and not is_coach)
+    # ADR 0018: a non-pushed edit leaves Garmin's workout on the watch. When a
+    # coach run's name resolves to that original workout rather than the edited
+    # day, the athlete ran the original - score the prescription they executed
+    # and record the divergence, instead of grading the wrong homework.
+    mismatch = executed = None
+    if is_idaten_plan and is_coach and not is_idaten_pushed:
+        executed = _executed_coach_workout(db, a)
+        if executed and _norm_name(day.title) != _norm_name(executed["title"]):
+            mismatch = {"executed": executed["title"], "planned": day.title,
+                        "planned_source": _version_source(db, day)}
+        else:
+            executed = None  # names agree (or no evidence): the edit was followed
+
+    prefer_idaten = mismatch is None and (
+        is_idaten_plan or (is_idaten_pushed and not is_coach))
+
+    # The training-effect label driving coach-band derivation: the executed
+    # prescription's own label when resolved, else Garmin's summary label.
+    te = (executed or {}).get("training_effect") or summary.get("trainingEffectLabel")
 
     # Pull the watch's own compliance score only when the structured workout on
-    # the watch WAS the plan being scored: a plain coach run, or an Idaten day we
-    # actually pushed. For an Idaten edit we didn't push, the watch still holds
-    # Garmin's workout, so its score is against the wrong target - compute ours.
+    # the watch WAS the prescription being scored: a plain coach run, an Idaten
+    # day we actually pushed, or a mismatch (the athlete ran the watch's
+    # workout). For a followed non-pushed edit, the watch's score is against
+    # the wrong target - compute ours.
     gscore = summary.get("directWorkoutComplianceScore")
-    if gscore is not None and ((is_coach and not is_idaten_plan) or is_idaten_pushed):
-        return int(gscore), "garmin", None
-
+    if gscore is not None and ((is_coach and not is_idaten_plan)
+                               or is_idaten_pushed or mismatch is not None):
+        # Stamp guard differs from prefer_idaten on purpose: a pushed day's
+        # watch score judged Idaten's own workout even on a coach-tagged run.
+        prescription = (_plan_day_prescription(day) if is_idaten_pushed
+                        else _coach_prescription(executed, a, te))
+        return ScoreResult(int(gscore), "garmin", None, prescription, mismatch)
     segs = (_idaten_segments(day, zones) if prefer_idaten
-            else _coach_segments(a.splits, summary.get("trainingEffectLabel"), zones, a))
+            else _coach_segments(a.splits, te, zones, a))
     out = execution_score(a.series, segs)
     if not out:
-        return None, None, None
-    return out["score"], "idaten", out["breakdown"]
+        return NOT_SCORED
+    prescription = (_plan_day_prescription(day) if prefer_idaten
+                    else _coach_prescription(executed, a, te))
+    return ScoreResult(out["score"], "idaten", out["breakdown"],
+                       prescription, mismatch)
 
 
 # --- Tier-3: the ambiguous middle -----------------------------------------

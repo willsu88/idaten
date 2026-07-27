@@ -1746,3 +1746,17 @@ Code-review follow-ups to v1.37.
 
 - `GET /api/chat/sessions`: each session gains `reported: boolean` - whether the caller has filed a `chat_session` report on it. The Report button reads this, so "Reported" persists across reloads and history reopens (and a disabled button keeps a resend from overwriting the original comment).
 - `POST /api/feedback` with `surface: "chat_session"` now rejects any `rating` other than `-1` with 422, enforcing the v1.37 invariant instead of merely documenting it.
+
+## v1.39 - execution scores pinned to the executed prescription (ADR 0018)
+
+The scorer now resolves which prescription a run actually executed instead of trusting the calendar.
+When a coach run's workout name resolves to the original Garmin workout rather than the day's edited plan (a non-pushed edit leaves the original on the watch), the run is scored against the workout it executed and the divergence is recorded.
+
+- Activity objects (everywhere `_activity_dict` is served: activity lists, activity detail, Today's completed workout) gain `plan_mismatch`: `{ executed, planned, planned_source } | null`.
+  Set only when the run executed a different workout than the day's plan; null for matched runs and for activities scored before v1.39.
+- `GET /api/activities/{id}` additionally returns `scored_prescription`: the prescription the score judged, frozen at scoring time (`{ source: "plan_day" | "garmin_coach", title, ... }`), never re-derived from the current plan; null on activities scored before v1.39.
+
+### UI
+
+- The execution-score block (activity detail and Today) shows a notice above the coach note when `plan_mismatch` is set: the athlete ran the original workout, and the score judges the workout actually run.
+- The coach's execution analysis names the swap instead of grading the run against the plan the athlete didn't follow (backend prompt change; no new fields).

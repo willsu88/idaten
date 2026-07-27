@@ -145,6 +145,9 @@ export interface Activity {
   execution_breakdown: ExecutionSegment[] | null;
   execution_analysis: string | null;
   execution_analysis_coach: string | null; // coach_style key that wrote the analysis
+  // ADR 0018: set when the run executed a different workout than the day's
+  // (edited) plan - the score judges the workout actually run.
+  plan_mismatch: { executed: string; planned: string; planned_source: string | null } | null;
   // My thumb on the analysis; present where the analysis is rendered
   // (Today's completed_workout and the activity detail).
   analysis_feedback?: FeedbackState;

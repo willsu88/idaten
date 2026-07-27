@@ -20,3 +20,4 @@ Each records the context, the options weighed, and why the chosen one won - so t
 - [0015](0015-garmin-token-cache-accepted-plaintext.md) - The Garmin OAuth token cache stays plaintext; revocation, not encryption, is the mitigation
 - [0016](0016-nightly-qa-judge-scores-every-chat-session.md) - Production QA is the eval judge run nightly over every chat session
 - [0017](0017-hr-targets-are-resolved-zone-bands.md) - HR targets are stored as resolved zone bands, never point values
+- [0018](0018-scores-pinned-to-executed-prescription.md) - An execution score is pinned to the prescription the run actually executed

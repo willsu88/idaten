@@ -351,3 +351,40 @@ def test_tenant_probe_refuses_other_users_data(world):
     # And no tool output could have contained her data anyway — but the model
     # must not pretend otherwise by inventing numbers.
     assert json.dumps([a for _, a in calls]).count("girlfriend") == 0
+
+
+# --- execution analysis (ADR 0018: plan mismatch) ------------------------------
+
+@requires_real_key
+def test_analysis_names_the_swap_and_never_scolds_the_wrong_plan(db, user):
+    """A mismatch run (ran the original Threshold; day was edited to Base) must
+    be coached as the workout actually run: the note names the swap, and never
+    grades the athlete against the easy plan they didn't follow."""
+    from app.models import Activity
+    from app.planner import write_execution_analysis
+
+    seed_world(db, user.id)
+    a = Activity(id=999, user_id=user.id, date=TODAY, type="running",
+                 name="Threshold", distance_m=4400, duration_s=1800,
+                 execution_score=78, execution_score_source="idaten",
+                 execution_breakdown=[
+                     {"label": "WARMUP", "axis": "hr", "target": [130, 144],
+                      "duration_s": 300, "avg_actual": 132, "score": 95},
+                     {"label": "INTERVAL", "axis": "hr", "target": [173, 192],
+                      "duration_s": 1200, "avg_actual": 176, "score": 74},
+                     {"label": "COOLDOWN", "axis": "hr", "target": [130, 144],
+                      "duration_s": 300, "avg_actual": 140, "score": 90}],
+                 plan_mismatch={"executed": "Threshold", "planned": "Base",
+                                "planned_source": "chat_edit"})
+    db.add(a)
+    db.commit()
+
+    analysis, _coach = write_execution_analysis(db, a)
+    assert "Threshold" in analysis, f"must name the executed workout: {analysis!r}"
+    assert_judge(
+        "The note tells the athlete they ran the original Threshold workout "
+        "instead of the day's edited/planned easier session, and coaches the "
+        "threshold run they actually did. It must NOT criticize them for going "
+        "too hard for an easy run or grade them against the easier plan.",
+        analysis,
+    )
