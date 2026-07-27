@@ -12,8 +12,9 @@ The system prompt never changes on its own.
 - **Coach note** (the morning daily review, `DailyCoachNote` on Today) - highest volume, the relationship surface; catches tone/grounding drift fastest.
 - **Execution analysis** (the post-run note on `ResultCard` / activity detail) - highest stakes; where hallucination risk concentrates (invented numbers, ungrounded race-goal claims).
 - **Edit proposals** - no thumbs; accept/dismiss is the decision signal. A dismiss offers an optional one-tap reason: "Didn't want the change" (preference) vs "The reasoning was wrong" (the quality signal).
-- **Chat replies** - deliberately NOT rated by humans; the athlete already corrects the coach in-line, and per-message ratings would be noise.
+- **Chat replies** - deliberately NOT rated per message; the athlete already corrects the coach in-line, and per-message ratings would be noise.
   Chat quality is instead machine-scored: the nightly QA judge grades every session (see "Continuous QA" below), making chat the most-observed surface rather than the least.
+  The human channel is whole-session: a "Report" button on the chat page files the session as `chat_session` feedback, freezing the same transcript the judge grades, so a member flags a bad conversation without screenshots and the admin sees it next to the machine verdicts.
 
 Thumbs are ghost icons on the shared `CoachNote` component - tap-optional, never a prompt, re-tappable to change.
 A thumbs-down offers preset chips (wrong / off tone / too long / not useful) plus an optional free-text line.

@@ -188,7 +188,8 @@ export type FeedbackSurface =
   | "coach_note"
   | "execution_analysis"
   | "edit_proposal"
-  | "weekly_summary";
+  | "weekly_summary"
+  | "chat_session";
 
 /** GET /api/week/summary — the coach's retrospective on one closed summary
  * week (Mon-Sun). Its own artifact: permanent on the Week page, spotlighted on

@@ -19,6 +19,7 @@ const SURFACE_LABELS: Record<FeedbackSurface, string> = {
   execution_analysis: "Run analysis",
   edit_proposal: "Plan proposals",
   weekly_summary: "Week in review",
+  chat_session: "Reported chat",
 };
 
 const TAG_LABELS: Record<string, string> = {
@@ -160,6 +161,7 @@ export function AdminQualityCard() {
                         ))}
                         <span className="ml-auto text-xs text-muted-foreground">
                           {memberName(n.user_id)}
+                          {n.surface === "chat_session" && ` · session ${n.artifact_ref.slice(0, 8)}`}
                           {n.updated_at && ` · ${formatDay(n.updated_at.slice(0, 10))}`}
                         </span>
                       </div>

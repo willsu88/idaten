@@ -1722,3 +1722,20 @@ QA scoring is the third instance-level call-site toggle.
 
 - Admin page gains a "Coach QA" card: per rubric item, this week's counts (always shown with denominators, e.g. "3/4"), the version-grouped comparison table, a highlight on `regression`, and the recent-fails list with reasons and session references. No transcript drill-down.
 - The "Coach features" toggles section gains the QA switch.
+
+## v1.37 - member "report this chat" (surface `chat_session`)
+
+The QA fast-follow reserved by ADR 0016's spec: a member can report a whole chat session to the admin, replacing screenshots.
+A report is ordinary coach-quality feedback - surface `chat_session`, `ref` = the chat session id, `rating: -1` - so it upserts per (user, session) and rides the existing endpoints.
+Recording freezes the session transcript (the same turns-plus-tool-results view the nightly QA judge grades) as `artifact_text`, and the session's stamped `prompt_version`.
+Member-initiated reports and nightly judge verdicts stay distinguishable by construction: reports live in feedback, judge verdicts in QA scores, joinable on the session id.
+
+### Endpoints
+
+- `POST /api/feedback` accepts `surface: "chat_session"` with `ref` = session id. 404 when the session has no messages or belongs to another member. No new endpoints.
+- `GET /api/feedback/summary` (admin only): `chat_session` reports appear in `by_surface` and `recent_negative` like any other surface.
+
+### UI
+
+- The chat page header gains a "Report" button (hidden until the session has messages): a confirm dialog with an optional comment sends the report; the button then reads "Reported" for that session.
+- The admin "Coach quality" card labels the surface "Reported chat" and shows the session id prefix on each report.

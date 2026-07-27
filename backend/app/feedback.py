@@ -17,7 +17,8 @@ from sqlalchemy.orm import Session
 
 from .models import Activity, DailyReview, Feedback, PendingEdit, WeeklySummary
 
-SURFACES = ("coach_note", "execution_analysis", "edit_proposal", "weekly_summary")
+SURFACES = ("coach_note", "execution_analysis", "edit_proposal", "weekly_summary",
+            "chat_session")
 
 # Preset reason chips. The first four are the thumbs-down chips; the last two
 # are the proposal-dismiss reasons ("didn't want the change" is a preference,
@@ -63,6 +64,16 @@ def _resolve_artifact(db: Session, user_id: int, surface: str,
         if s is None or not s.coach_note:
             return None
         return s.coach_note, s.snapshot, s.prompt_version
+    if surface == "chat_session":
+        # A member reporting a whole chat session (the QA fast-follow). The
+        # frozen text is the same transcript view the nightly judge grades -
+        # member-initiated, so sharing it with the admin is the point.
+        from .qa import _render_transcript
+
+        transcript, pv, _date = _render_transcript(db, user_id, ref)
+        if not transcript:
+            return None
+        return transcript, None, pv
     if surface == "edit_proposal":
         try:
             e = db.get(PendingEdit, int(ref))

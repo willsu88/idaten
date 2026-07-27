@@ -9,6 +9,7 @@ import { History, MessageSquarePlus } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { ChatConversation } from "@/components/chat/chat-conversation";
 import { useChat } from "@/components/chat/chat-provider";
+import { ReportChatButton } from "@/components/chat/report-chat-button";
 import { useCoach } from "@/components/coach-provider";
 import { Button } from "@/components/ui/button";
 import { isoDate } from "@/lib/utils";
@@ -51,6 +52,7 @@ export function ChatClient() {
         subtitle="Ask anything about your training"
         actions={
           <>
+            <ReportChatButton />
             <Button variant="outline" size="sm" onClick={() => setSessionsOpen(!sessionsOpen)}>
               <History className="h-3.5 w-3.5" />
               History

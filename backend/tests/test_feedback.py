@@ -83,6 +83,39 @@ def test_missing_or_foreign_artifact_rejected(db, user):
     assert feedback.record(db, user.id, "execution_analysis", str(a.id), 1) is None
 
 
+def _seed_chat(db, user_id, sid="cs1", pv="d30c48ffa343"):
+    from app.models import ChatMessage
+    at = dt.datetime(2026, 7, 26, 10, 0)
+    db.add(ChatMessage(user_id=user_id, session_id=sid, role="user",
+                       content="how far this week?", kind="text", created_at=at))
+    db.add(ChatMessage(user_id=user_id, session_id=sid, role="tool", content="",
+                       kind="tool_call", prompt_version=pv, created_at=at,
+                       payload={"name": "get_week", "args": {}, "result": '{"km": 42.0}'}))
+    db.add(ChatMessage(user_id=user_id, session_id=sid, role="assistant",
+                       content="You ran 50km.", kind="text", prompt_version=pv,
+                       created_at=at))
+    db.commit()
+
+
+def test_chat_session_report_freezes_the_judged_transcript(db, user):
+    _seed_chat(db, user.id)
+    row = feedback.record(db, user.id, "chat_session", "cs1", -1,
+                          tags=["wrong"], comment="claimed 50km, I ran 42")
+    assert row is not None and row.rating == -1
+    # Same view the nightly QA judge grades: turns plus tool ground truth.
+    assert "[tool result]" in row.artifact_text and '{"km": 42.0}' in row.artifact_text
+    assert "You ran 50km." in row.artifact_text
+    assert row.prompt_version == "d30c48ffa343"
+    assert row.artifact_ref == "cs1"
+
+
+def test_chat_session_report_rejects_foreign_or_unknown_sessions(db, user):
+    other = make_user(db, username="member2")
+    _seed_chat(db, other.id, sid="theirs")
+    assert feedback.record(db, user.id, "chat_session", "theirs", -1) is None
+    assert feedback.record(db, user.id, "chat_session", "no-such", -1) is None
+
+
 def test_prompt_version_is_stable_hash():
     v1 = feedback.prompt_version("You are a coach.")
     assert v1 == feedback.prompt_version("You are a coach.")

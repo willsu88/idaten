@@ -1769,8 +1769,8 @@ def checkin_niggle(niggle_id: int, db: Session = Depends(get_db),
 # --- coach-quality feedback (COACH_QUALITY.md) -----------------------------------
 
 class FeedbackBody(BaseModel):
-    surface: str  # coach_note | execution_analysis | edit_proposal
-    ref: str      # coach_note: review date ISO; others: numeric id
+    surface: str  # one of feedback.SURFACES
+    ref: str      # coach_note/weekly_summary: date ISO; chat_session: session id; others: numeric id
     rating: int | None = None  # 1 up | -1 down | null (dismiss reason only)
     tags: list[str] = []
     comment: str = ""
