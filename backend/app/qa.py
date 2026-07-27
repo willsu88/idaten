@@ -239,11 +239,14 @@ def judge_session(db: Session, user_id: int, session_id: str) -> int:
         model=config.judge_model,
     )
     rv = rubric_version()
+    # Judge everything BEFORE touching the DB: each judge call is tens of
+    # seconds, SQLite has one write lock, and a flushed-but-uncommitted upsert
+    # held across a judge call starves every live chat writer ("database is
+    # locked", 2026-07-27 incident). The write pass below is milliseconds.
+    verdicts = [(item, *judge_one(client, item, transcript))
+                for item in RUBRIC if "chat" in item.call_sites]
     written = 0
-    for item in RUBRIC:
-        if "chat" not in item.call_sites:
-            continue
-        verdict, reason = judge_one(client, item, transcript)
+    for item, verdict, reason in verdicts:
         existing = db.scalars(
             select(QaScore).where(
                 QaScore.call_site == "chat",

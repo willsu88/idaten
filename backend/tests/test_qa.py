@@ -134,6 +134,27 @@ def test_judge_session_writes_stamped_three_valued_verdicts(db, user, monkeypatc
     assert '{"km": 42.0}' in stub.calls[0]
 
 
+def test_judge_calls_never_run_inside_a_write_transaction(db, user, monkeypatch):
+    """Each judge call is tens of seconds and SQLite has one write lock: a
+    flushed-but-uncommitted upsert held across a judge call starves every live
+    chat writer with "database is locked" (production incident, 2026-07-27)."""
+    _seed_session(db, user.id, "s1", at=YESTERDAY)
+
+    class TxnProbe:
+        def __init__(self):
+            self.in_txn: list[bool] = []
+
+        def complete_structured(self, system, messages, schema, name):
+            raw = db.connection().connection.dbapi_connection
+            self.in_txn.append(raw.in_transaction)
+            return PASS
+
+    probe = TxnProbe()
+    _stub(monkeypatch, probe)
+    qa.judge_session(db, user.id, "s1")
+    assert probe.in_txn == [False, False, False]
+
+
 def test_rejudge_upserts_one_living_verdict_per_item(db, user, monkeypatch):
     _seed_session(db, user.id, "s1", at=YESTERDAY)
     _stub(monkeypatch, StubJudge([FAIL, FAIL, FAIL]))

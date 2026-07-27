@@ -349,7 +349,10 @@ def run_chat(db: Session, user: User, session_id: str | None, user_message: str,
                                content=partial, payload={"stopped": True}, prompt_version=pv))
             db.commit()
         yield {"type": "stopped"}
-    except Exception as e:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         log.exception("chat turn failed")
         db.rollback()  # a poisoned flush must not kill later commits (hard-won lesson)
-        yield {"type": "error", "message": str(e)}
+        # Never surface the raw exception: it leaks SQL, ids, and health data
+        # into the member's chat (and into any later QA transcript).
+        yield {"type": "error",
+               "message": "the coach hit a temporary problem. Please try again."}
