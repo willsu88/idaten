@@ -5,7 +5,7 @@ with `isRace: true` carry title, date, a `completionTarget` distance, and a
 `primaryEvent` flag. There is no reverse direction — races created in the app
 are never sent to Garmin.
 
-Rules (ROADMAP decision #5):
+Rules (one-way-import decision, 2026-07-17):
 - Dedupe by Garmin event UUID, falling back to (name, date) to adopt races the
   user had already entered manually.
 - Existing rows are never updated: app-side edits win.

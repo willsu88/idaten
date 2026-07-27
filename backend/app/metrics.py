@@ -281,7 +281,7 @@ def weekly_km(db: Session, user_id: int, today: dt.date, weeks: int = 4) -> list
     return out
 
 
-# --- training-load ramp guardrail (macro/periodization, ROADMAP Idea E) ---------
+# --- training-load ramp guardrail (macro/periodization signal) ------------------
 #
 # Rolling 7d/28d load ratio ("acute:chronic"), the too-much-too-soon early
 # warning. Constants CALIBRATED on both live users' 300-day history (2026-07-21

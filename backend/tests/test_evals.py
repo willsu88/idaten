@@ -1,4 +1,4 @@
-"""Model evals: real LLM calls against a seeded fixture DB (ROADMAP Phase 3 #11).
+"""Model evals: real LLM calls against a seeded fixture DB (layers 3-4, docs/TESTING.md).
 
 Opt-in — excluded by default (see pytest.ini). Run with a real key:
 

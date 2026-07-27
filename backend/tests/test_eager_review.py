@@ -1,4 +1,4 @@
-"""Eager morning review (ROADMAP Idea C decision): the daily job generates the
+"""Eager morning review (2026-07-21 decision, push rejected): the daily job generates the
 review right after the sync when recovery data is present, catch_up retries
 while Garmin data is late, evaluate_today is idempotent so the scheduler and a
 Today page load can never double-spend, and /dashboard/review reports
@@ -35,6 +35,12 @@ class StubReviewLLM:
 
 def _use_llm(monkeypatch, stub):
     monkeypatch.setattr(planner, "make_client", lambda provider=None, **_kw: stub)
+    # On real-world Mondays _retry_pending_reviews also fires _eager_weekly
+    # (app.weekly binds its own make_client), so stub that seam too - with a
+    # separate stub, keeping this file's `stub.calls` counts review-only.
+    from app import weekly
+    weekly_stub = StubReviewLLM({"summary": "Steady week."})
+    monkeypatch.setattr(weekly, "make_client", lambda provider=None, **_kw: weekly_stub)
 
 
 def _health(db, user_id, date, **kw):

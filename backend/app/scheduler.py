@@ -64,7 +64,7 @@ def _review_done(db: Session, user_id: int, today: dt.date) -> bool:
 
 
 def _eager_review(db: Session, user: User, today: dt.date) -> None:
-    """Eager morning review (ROADMAP Idea C decision): generate the coach's
+    """Eager morning review (2026-07-21 decision, push rejected): generate the coach's
     daily call right after the sync lands, so it exists before the athlete
     opens the app. Same content gate as the lazy path — never reviews on
     absent data (`catch_up` retries every 30 min until the night lands) — and

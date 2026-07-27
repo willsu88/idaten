@@ -12,6 +12,12 @@ It is invoked from five call sites: chat, daily review, plan authoring, executio
 ### Coach call site
 The feature that triggered an LLM invocation: `chat`, `review`, `plan`, `execution_analysis`, or `weekly_summary`.
 Only `chat` is member-initiated; the others are system-initiated (scheduled or lazy-loaded).
+The call site is the trigger ("which door the request came through"), not the output; see Surface for the output dimension.
+
+### Surface
+A kind of coach-authored output a human can rate: a review's coach note, an execution analysis, or an edit proposal.
+The surface is the artifact ("the thing that came out"), while the call site is the trigger.
+The mapping is one-to-many: one call site can produce more than one kind of surface (chat can produce both a session transcript and an edit proposal), so the two terms are distinct and must not be conflated.
 
 ### Member
 A user account in the household.

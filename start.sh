@@ -1,29 +1,44 @@
 #!/usr/bin/env bash
 #
-# Start Garmin Bot for remote access via a Cloudflare tunnel.
+# Start Idaten: test gate -> Docker stack -> optional public tunnel.
 #
-#   1. Keeps the Mac awake            (caffeinate)
+#   1. Keeps the machine awake        (caffeinate; macOS only, skipped elsewhere)
 #   2. Runs the test gate             (backend pytest + frontend vitest; SKIP_TESTS=1 to bypass)
 #   3. Brings up the Docker stack     (docker compose up -d --build)
-#   4. Starts a Cloudflare tunnel     (see the two modes below)
+#   4. Starts a Cloudflare tunnel     (see the three modes below)
 #
-# Two tunnel modes:
+# Three tunnel modes:
 #
-#   named  (default) - the permanent, bookmarkable domain (idaten.williamsu.me).
-#                      Uses the host `cloudflared` binary + ~/.cloudflared/config.yml.
-#                      Runs in the background; ./stop.sh tears it down.
+#   named  (default) - a permanent, bookmarkable domain on YOUR Cloudflare zone.
+#                      Uses the host `cloudflared` binary + ~/.cloudflared/config.yml;
+#                      the tunnel name is read from that config's `tunnel:` key
+#                      (override with the CF_TUNNEL env var).
+#                      One-time setup on a fresh machine:
+#                        1. install cloudflared (brew install cloudflared / apt)
+#                        2. cloudflared tunnel login
+#                        3. cloudflared tunnel create <name>
+#                        4. cloudflared tunnel route dns <name> app.your-domain.com
+#                        5. write ~/.cloudflared/config.yml:
+#                             tunnel: <name>
+#                             credentials-file: /path/to/<tunnel-id>.json
+#                             ingress:
+#                               - hostname: app.your-domain.com
+#                                 service: http://localhost:3000
+#                               - service: http_status:404
 #
 #   quick            - a throwaway random https://<random>.trycloudflare.com URL.
-#                      Uses a cloudflared Docker container. No domain/config needed.
-#                      Good for one-off testing. The URL changes every run.
+#                      Uses a cloudflared Docker container. No domain, config, or
+#                      Cloudflare account needed. Good for one-off testing; the
+#                      URL changes every run.
+#
+#   none             - no tunnel: localhost / LAN only. The right mode for a
+#                      self-hosted box that is never exposed to the internet.
 #
 # Pick a mode with the TUNNEL env var or the first argument:
 #
-#   ./start.sh              # named tunnel (the real domain)
+#   ./start.sh              # named tunnel (your permanent domain)
 #   ./start.sh quick        # random trycloudflare URL
-#   TUNNEL=quick ./start.sh # same as above
-#
-# This is fully independent of Tailscale / the IslandByte network.
+#   ./start.sh none         # no tunnel
 #
 # Stop:   ./stop.sh
 #
@@ -34,8 +49,9 @@ cd "$ROOT"
 
 APP_PORT=3000
 CF_NAME="garmin-bot-cloudflared"          # docker container name (quick mode)
-CF_TUNNEL="idaten"                        # named tunnel name (named mode)
 CF_CONFIG="$HOME/.cloudflared/config.yml" # named tunnel config (host binary)
+# Named-tunnel name: CF_TUNNEL env override, else the config's `tunnel:` key.
+CF_TUNNEL="${CF_TUNNEL:-$(grep -oE '^tunnel: *[^ ]+' "$CF_CONFIG" 2>/dev/null | awk '{print $2}' || true)}"
 PID_FILE="$ROOT/.caffeinate.pid"
 CF_PID_FILE="$ROOT/.cloudflared.pid"      # named tunnel host process pid
 CF_LOG="$ROOT/.cloudflared.log"           # named tunnel host process log
@@ -47,14 +63,16 @@ DOCKER="$(command -v docker || echo /usr/local/bin/docker)"
 
 log() { printf '\033[1;33m[start]\033[0m %s\n' "$*"; }
 
-# 1. Keep the machine awake ---------------------------------------------------
+# 1. Keep the machine awake (macOS only) --------------------------------------
 # -d display, -i idle system, -m disk, -s while on AC power. Runs until killed.
-if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+if ! command -v caffeinate >/dev/null 2>&1; then
+  log "no caffeinate on this OS - skipping keep-awake (a server stays up anyway)"
+elif [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
   log "caffeinate already running (pid $(cat "$PID_FILE"))"
 else
   caffeinate -dims &
   echo $! > "$PID_FILE"
-  log "caffeinate started (pid $(cat "$PID_FILE")) - Mac will not idle-sleep"
+  log "caffeinate started (pid $(cat "$PID_FILE")) - machine will not idle-sleep"
 fi
 
 # 2. Test gate ----------------------------------------------------------------
@@ -85,13 +103,18 @@ case "$TUNNEL" in
     # Permanent domain via the host cloudflared binary + ~/.cloudflared/config.yml.
     # config.yml maps hostname -> http://localhost:3000, so nothing else to wire.
     if ! command -v cloudflared >/dev/null 2>&1; then
-      log "ERROR: 'cloudflared' not found on PATH. Install it (brew install cloudflared)"
-      log "or run the throwaway tunnel instead: ./start.sh quick"
+      log "ERROR: 'cloudflared' not found on PATH. Install it (brew install cloudflared),"
+      log "or use './start.sh quick' (throwaway URL) / './start.sh none' (no tunnel)."
       exit 1
     fi
     if [[ ! -f "$CF_CONFIG" ]]; then
       log "ERROR: missing $CF_CONFIG (the named tunnel config)."
-      log "Run ./start.sh quick for a throwaway URL, or restore the config."
+      log "One-time setup is documented in this script's header. Meanwhile:"
+      log "'./start.sh quick' (throwaway URL) or './start.sh none' (no tunnel)."
+      exit 1
+    fi
+    if [[ -z "$CF_TUNNEL" ]]; then
+      log "ERROR: no tunnel name - add a 'tunnel:' key to $CF_CONFIG or set CF_TUNNEL."
       exit 1
     fi
 
@@ -115,7 +138,7 @@ case "$TUNNEL" in
     echo
     if grep -q "Registered tunnel connection" "$CF_LOG" 2>/dev/null; then
       log "Done. Permanent URL:"
-      printf '\n    \033[1;36mhttps://%s\033[0m\n\n' "${HOSTNAME_:-idaten.williamsu.me}"
+      printf '\n    \033[1;36mhttps://%s\033[0m\n\n' "${HOSTNAME_:-<hostname in $CF_CONFIG>}"
       log "Run ./stop.sh to tear it all down. Tunnel logs: $CF_LOG"
     else
       log "Tunnel started but no edge connection registered yet. Check logs:"
@@ -152,8 +175,14 @@ case "$TUNNEL" in
     fi
     ;;
 
+  none)
+    echo
+    log "Done (no tunnel). App: http://localhost:${APP_PORT}"
+    log "Run ./stop.sh to tear it all down."
+    ;;
+
   *)
-    log "ERROR: unknown tunnel mode '$TUNNEL' (use 'named' or 'quick')"
+    log "ERROR: unknown tunnel mode '$TUNNEL' (use 'named', 'quick', or 'none')"
     exit 1
     ;;
 esac

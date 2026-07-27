@@ -2,7 +2,7 @@
 
 The app is reachable at its domain through a Cloudflare named tunnel: a connector on the host dials out to Cloudflare, and no inbound port is ever opened.
 The tunnel process is started and stopped by `start.sh`/`stop.sh`, never by hand.
-Full reasoning, the VPS migration decision, and the runbook live in `DEPLOYMENT.md`; this ADR records only the two decisions that outlast it.
+Full reasoning, the VPS migration decision, and the runbook live in `.scratch/vps-migration/ticket.md`; this ADR records only the two decisions that outlast it.
 
 ## Considered Options
 
@@ -20,5 +20,5 @@ The fix was ownership, not configuration: **any process the deployment depends o
 ## Consequences
 
 - The host advertises nothing: the connector dials out, so hardening reduces to SSH plus the tunnel.
-- SSE streaming has two recorded scars that any transport change must re-verify: Next.js `compress: false` must stay, and chat SSE must go through a route handler, not a `rewrites()` proxy (see DEPLOYMENT.md step 5).
-- Reboot/logout still requires re-running `./start.sh`; the accepted interim is the `caffeinate` pin, and the real fix is the VPS move planned in DEPLOYMENT.md.
+- SSE streaming has two recorded scars that any transport change must re-verify: Next.js `compress: false` must stay, and chat SSE must go through a route handler, not a `rewrites()` proxy (see the vps-migration ticket, step 5).
+- Reboot/logout still requires re-running `./start.sh`; the accepted interim is the `caffeinate` pin, and the real fix is the VPS move planned in `.scratch/vps-migration/ticket.md`.

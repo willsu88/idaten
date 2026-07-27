@@ -12,7 +12,7 @@ Key resolution (first hit wins):
 
 The key lives OUTSIDE the database and is NOT part of a `.db` backup, so a
 database or backup leak alone cannot decrypt the credentials - which is the
-whole point (see the security-hardening section of ROADMAP.md).
+whole point (see docs/adr/0013-garmin-credentials-encrypted-at-rest.md).
 
 Stored values are tagged `gb1:<token>`. A value without the tag is treated as
 legacy plaintext (from before encryption) and returned unchanged on read, so

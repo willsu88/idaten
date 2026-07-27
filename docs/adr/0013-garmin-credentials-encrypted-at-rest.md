@@ -18,7 +18,7 @@ The key lives deliberately outside the database and is not captured by a `.db` b
 - Stored values are tagged `gb1:<token>`; an untagged value is treated as legacy plaintext and returned unchanged on read, so nothing broke mid-migration, and an idempotent startup migration rewrote legacy rows in place.
 - A tagged value that fails to decrypt fails loudly (the key changed) rather than handing ciphertext to Garmin as a password.
 - The key is a real operational responsibility: if `SECRET_KEY` / `.secret_key` is lost, every member re-enters their Garmin credentials.
-  The DEPLOYMENT.md migration runbook carries this as an explicit checklist item.
+  The VPS-migration runbook (`.scratch/vps-migration/ticket.md`) carries this as an explicit checklist item.
 - `.db` backups remain secrets (they hold health and location data) but no longer leak credentials on their own.
 - The same encrypt-at-rest path is the designated home for future stored secrets (per-user BYOB LLM keys).
 - Known accepted gap: the on-disk Garmin OAuth token cache stays plaintext in a `0700` directory - tracked, lower stakes than the password.

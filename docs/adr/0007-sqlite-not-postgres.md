@@ -2,7 +2,7 @@
 
 The database is a single SQLite file, tuned for the actual deployment shape: one backend process in Docker on a host machine, serving a household.
 Its known costs are paid deliberately in `db.py`: WAL mode so readers don't block the writer, a 30s busy timeout so writers wait instead of raising "database is locked", and mutual exclusion between the backfill and the daily job.
-When data safety was audited (ROADMAP 2026-07-20), the verdict was that the risk was never SQLite - it was credentials at rest, backup handling, and transport, none of which change with Postgres.
+When data safety was audited (security review, 2026-07-20), the verdict was that the risk was never SQLite - it was credentials at rest, backup handling, and transport, none of which change with Postgres.
 
 ## Considered Options
 

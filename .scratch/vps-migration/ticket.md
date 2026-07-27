@@ -1,8 +1,8 @@
-# Deployment Plan - moving Idaten off the Mac
+# Ticket: move Idaten off the Mac onto a VPS
 
-Working document. The decision, the reasoning, and a step-by-step migration runbook.
-Not done yet - captured so we can execute later without re-deriving it.
-Written: 2026-07-21.
+Filed 2026-07-21 as DEPLOYMENT.md; converted to a ticket 2026-07-27 (it is an unbuilt plan, and it carries the maintainer's personal infrastructure - wrong content for a repo-root doc). Status: ready.
+The decision, the reasoning, and a step-by-step migration runbook - captured so we can execute later without re-deriving it.
+The current tunnel setup it describes is documented generically in `start.sh`'s header and docs/adr/0012.
 
 ## Current local setup (the Mac, until the VPS move)
 
@@ -76,7 +76,7 @@ Verify live pricing at checkout - promos shift often; the ranges above are not l
 ### 1. Provision the VPS
 
 - [ ] Create a **2 vCPU / 4 GB** instance in Tokyo or Singapore, Ubuntu LTS.
-The whole stack (FastAPI + Next.js + SQLite) fits comfortably at household + few-friends concurrency; SQLite is fine here (see ROADMAP security section - Postgres is not needed).
+The whole stack (FastAPI + Next.js + SQLite) fits comfortably at household + few-friends concurrency; SQLite is fine here (see docs/adr/0007 - Postgres is not needed).
 - [ ] Harden the box: non-root sudo user, SSH keys only (disable password auth), `ufw` allowing only SSH plus whatever the Cloudflare tunnel needs (the tunnel dials out, so ideally no inbound app ports are exposed publicly at all).
 - [ ] Install Docker + the Compose plugin.
 - [ ] Clone the repo (or copy the deploy files) onto the box.
@@ -85,7 +85,7 @@ The whole stack (FastAPI + Next.js + SQLite) fits comfortably at household + few
 
 - [ ] **Do NOT copy the live `data/garmin_bot.db` (or its `-wal`/`-shm`) off the host.**
 Copying the WAL DB while the app is running corrupts the app's connections (learned rule).
-Use the in-container SQLite backup API to produce a single consistent `.db` file, exactly as the ROADMAP predeploy backups do.
+Use the in-container SQLite backup API to produce a single consistent `.db` file, exactly as every predeploy backup has been taken.
 - [ ] Copy that backup file plus the Garmin token cache (`data/garmin_tokens/`) and the encryption key file (`data/.secret_key`, if `SECRET_KEY` is not set explicitly in `.env`) to the new box's `./data`.
 - [ ] Treat every `.db` file as a secret in transit (scp over SSH, delete the intermediate copy afterward).
 
@@ -138,4 +138,4 @@ Not true today.
 
 - Live VPS pricing at checkout (Tokyo vs Singapore, provider promos).
 - Whether to keep the Cloudflare **tunnel** or move to a Cloudflare-proxied A record to the VPS with the app ports firewalled (tunnel keeps zero inbound ports open, which is the safer default).
-- Backup cadence + destination for the VPS `.db` (and whether to encrypt the backup files themselves, per the ROADMAP "backups as secrets" note).
+- Backup cadence + destination for the VPS `.db` (and whether to encrypt the backup files themselves - `.db` backups are secrets, see docs/adr/0013).

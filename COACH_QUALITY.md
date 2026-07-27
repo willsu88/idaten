@@ -1,7 +1,7 @@
 # Coach quality feedback loop
 
 How Idaten knows whether the coach is good, and how that signal turns into a better coach.
-Agreed with Will 2026-07-21 (Idea D in ROADMAP.md).
+Agreed with Will 2026-07-21; decision record: docs/adr/0014.
 
 The one-line operating model: **a flight recorder, not an autopilot.**
 Capture is automated and continuous; improvement is a deliberate human act that the captured data makes fast and evidence-based.
