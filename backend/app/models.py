@@ -329,7 +329,7 @@ class PendingEdit(Base):
     # Proposed strength sessions ({date, duration_min, focus, rationale} dicts);
     # nullable=True is required — Mapped[Any] JSON columns are NOT NULL by default.
     strength: Mapped[Any] = mapped_column(JSON, nullable=True)
-    status: Mapped[str] = mapped_column(String, default="pending")  # pending|accepted|dismissed
+    status: Mapped[str] = mapped_column(String, default="pending")  # pending|accepted|dismissed|superseded
 
 
 class TrainingPlan(Base):
