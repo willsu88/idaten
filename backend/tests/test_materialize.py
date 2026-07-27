@@ -10,7 +10,7 @@ from app.planner import materialize_coach_plan
 
 TODAY = dt.date(2026, 7, 17)
 
-# A realistic slice of Julianne's mirrored coach week.
+# A realistic slice of a mirrored Garmin coach week (modeled on a live user).
 TASKS = [
     {"date": TODAY.isoformat(), "week": 8, "name": "Threshold",
      "training_effect": "LACTATE_THRESHOLD", "rest_day": False,

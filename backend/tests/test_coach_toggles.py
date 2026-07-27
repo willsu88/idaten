@@ -72,7 +72,7 @@ def test_falsy_stored_value_reads_disabled(db):
 
 def test_disabled_weekly_summary_skips_generation_for_every_member(db, user, monkeypatch):
     from tests.conftest import make_user
-    other = make_user(db, "julianne", "secret2")
+    other = make_user(db, "member2", "secret2")
     instance_settings.set_call_site_enabled(db, "weekly_summary", False)
     stub = StubLLM({"summary": "nope"})
     _stub_weekly(monkeypatch, stub)
@@ -186,8 +186,8 @@ def test_admin_put_is_partial_and_persists(client, db, user):
 def test_member_cannot_read_or_write_toggles(client, db, user):
     from tests.conftest import make_user
     _make_admin(db, user)  # someone must hold admin; the member is a second user
-    make_user(db, "julianne", "secret2")
-    _login(client, "julianne", "secret2")
+    make_user(db, "member2", "secret2")
+    _login(client, "member2", "secret2")
     assert client.get("/api/auth/coach_toggles").status_code == 403
     assert client.put("/api/auth/coach_toggles",
                       json={"weekly_summary": False}).status_code == 403

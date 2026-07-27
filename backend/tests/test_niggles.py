@@ -67,7 +67,7 @@ def test_severity_clamped_and_future_onset_rejected(db, user):
 
 
 def test_tenant_isolation(db, user):
-    other = make_user(db, username="julianne")
+    other = make_user(db, username="member2")
     n = niggles.log_niggle(db, other.id, "knee", 2)
     assert niggles.resolve_niggle(db, user.id, n.id) is None
     assert n.resolved_date is None

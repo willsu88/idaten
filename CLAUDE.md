@@ -15,6 +15,11 @@ Decisions go in ADRs; work not yet built (ideas, specs, in-flight tickets) goes 
 Never keep a changelog or build log in a Markdown doc - that is what deleted ROADMAP.md and UX_IMPROVEMENTS.md did, and they rotted.
 Frontend-facing API changes append a versioned section to `API_CONTRACT.md` first; the frontend is built against the contract.
 
+Never write personal or machine-specific data into anything that gets committed - docs, tickets, ADRs, test fixtures, code comments.
+That means no real names of household members (write "user 2"), no health values tied to a person, no real birthdates or credentials, and no local-machine details (timezones, hostnames, absolute paths outside the repo).
+Gitignored files (`.env`, `data/`, `.claude/settings.local.json`) are fine - that is where real values live.
+The repo is public-facing; git history is forever.
+
 ## Test gate
 
 `./start.sh` is the deploy path and the test gate (ADR 0001): it runs backend pytest and frontend vitest before bringing the Docker stack up, so a red test never reaches the live app.

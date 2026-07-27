@@ -75,7 +75,7 @@ def test_upsert_updates_in_place(db, user):
 
 
 def test_missing_or_foreign_artifact_rejected(db, user):
-    other = make_user(db, username="julianne")
+    other = make_user(db, username="member2")
     _seed_review(db, other.id)
     # No review of Will's own on that date, and no cross-tenant rating.
     assert feedback.record(db, user.id, "coach_note", TODAY.isoformat(), 1) is None
@@ -93,7 +93,7 @@ def test_prompt_version_is_stable_hash():
 # --- summary ---------------------------------------------------------------------
 
 def test_summary_aggregates_and_lists_negatives(db, user):
-    other = make_user(db, username="julianne")
+    other = make_user(db, username="member2")
     _seed_review(db, user.id)
     _seed_analysis(db, other.id)
     feedback.record(db, user.id, "coach_note", TODAY.isoformat(), 1)
@@ -146,5 +146,5 @@ def test_feedback_endpoint_roundtrip(client, db):
 def test_summary_is_admin_only(client, db):
     # Second user is not admin (ensure_admin promotes the first).
     make_user(db, username="will")  # user 1
-    _login(client, db, username="julianne")  # user 2, non-admin
+    _login(client, db, username="member2")  # user 2, non-admin
     assert client.get("/api/feedback/summary").status_code == 403

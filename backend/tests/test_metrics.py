@@ -155,7 +155,7 @@ def test_vdot_race_time_round_trip():
 
 
 def test_vdot_of_known_half():
-    # 2:12 half ~ Daniels VDOT 32-33 (Julianne's Garmin optimistic number).
+    # 2:12 half ~ Daniels VDOT 32-33 (user 2's Garmin optimistic number).
     vdot = metrics.vdot_from_performance(21097.5, 7920)
     assert 31 <= vdot <= 34
 

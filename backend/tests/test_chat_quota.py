@@ -159,7 +159,7 @@ def test_admin_can_set_and_clear_a_members_cap(db, client):
     from app import chat_quota
 
     _make_admin(db)
-    member = make_user(db, "julianne", "secret2")
+    member = make_user(db, "member2", "secret2")
     _login(client)
     r = client.put(f"/api/auth/users/{member.id}/chat_cap", json={"cap": 3})
     assert r.status_code == 200
@@ -171,7 +171,7 @@ def test_admin_can_set_and_clear_a_members_cap(db, client):
 
 def test_set_cap_validates_input(db, client):
     _make_admin(db)
-    member = make_user(db, "julianne", "secret2")
+    member = make_user(db, "member2", "secret2")
     _login(client)
     assert client.put(f"/api/auth/users/{member.id}/chat_cap",
                       json={"cap": -1}).status_code == 422
@@ -183,8 +183,8 @@ def test_set_cap_validates_input(db, client):
 
 def test_members_cannot_set_caps(db, client):
     _make_admin(db)
-    member = make_user(db, "julianne", "secret2")
-    _login(client, "julianne", "secret2")
+    member = make_user(db, "member2", "secret2")
+    _login(client, "member2", "secret2")
     assert client.put(f"/api/auth/users/{member.id}/chat_cap",
                       json={"cap": 999}).status_code == 403
 
@@ -193,7 +193,7 @@ def test_usage_rows_carry_msgs_today_and_cap_for_every_account(db, client):
     from app import chat_quota
 
     admin = _make_admin(db)
-    member = make_user(db, "julianne", "secret2")
+    member = make_user(db, "member2", "secret2")
     chat_quota.set_cap(db, member.id, 3)
     _seed_messages(db, member.id, 2)
     _seed_messages(db, member.id, 4, days_ago=2)  # older: not "today"

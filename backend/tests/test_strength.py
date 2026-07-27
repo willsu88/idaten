@@ -178,7 +178,7 @@ def test_manual_add_complete_delete(client, db, user):
 
 
 def test_tenant_isolation(client, db, user):
-    other = make_user(db, "julianne", "secret2")
+    other = make_user(db, "member2", "secret2")
     s = SupportSession(user_id=other.id, date=TODAY, source="manual")
     db.add(s)
     db.commit()

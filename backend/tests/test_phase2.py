@@ -21,7 +21,7 @@ USER_DATA = {
     "gender": "MALE",
     "weight": 67000.0,
     "height": 170.0,
-    "birthDate": "1998-10-29",
+    "birthDate": "1995-03-14",
     "vo2MaxRunning": 52.0,
     "lactateThresholdHeartRate": 186,
 }
@@ -55,13 +55,13 @@ def test_parse_user_data_units_and_case():
     assert p["height_cm"] == 170.0
     assert p["lthr"] == 186
     assert p["vo2max_running"] == 52.0
-    assert p["birth_date"] == "1998-10-29"
+    assert p["birth_date"] == "1995-03-14"
 
 
 def test_sync_profile_and_athlete_auto(db, user):
     sync_profile(db, user.id, StubGarmin(user_data=USER_DATA))
     auto = settings_store.athlete_auto(db, user.id)
-    born = dt.date(1998, 10, 29)
+    born = dt.date.fromisoformat(USER_DATA["birthDate"])
     expected_age = TODAY.year - born.year - ((TODAY.month, TODAY.day) < (born.month, born.day))
     assert auto["age"] == expected_age
     assert auto["lthr"] == 186

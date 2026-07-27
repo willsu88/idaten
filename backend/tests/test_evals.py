@@ -179,7 +179,7 @@ def test_planner_builds_structured_week_within_budget(db, user):
     seed_world(db, user.id)
     put_internal(db, user.id, GARMIN_PROFILE_KEY, {
         "gender": "male", "weight_kg": 67.0, "height_cm": 170.0,
-        "birth_date": "1998-10-29", "lthr": 186, "vo2max_running": 52,
+        "birth_date": "1995-03-14", "lthr": 186, "vo2max_running": 52,
         "fetched_at": TODAY.isoformat(),
     })
 

@@ -289,7 +289,7 @@ def weekly_km(db: Session, user_id: int, today: dt.date, weeks: int = 4) -> list
 # restarts where chronic ~0), so a flag requires (a) a chronic FLOOR — below it
 # the ratio is meaningless — and (b) the ratio to hold above threshold for
 # PERSIST consecutive days. That yields ~5 episodes/10mo (Will) and 2
-# (Julianne), all real ramps. Detraining ships as an exposed trend NUMBER (the
+# (user 2), all real ramps. Detraining ships as an exposed trend NUMBER (the
 # -15%/21d rule alone flagged 83 days for Will — too chatty for a hard zone);
 # the model reads it in context.
 
