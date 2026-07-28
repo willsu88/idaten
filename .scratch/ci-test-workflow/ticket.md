@@ -3,7 +3,7 @@ title: Add a test-only GitHub Actions workflow (commit hygiene, not the gate)
 labels: [needs-grilling]
 status: open
 created: 2026-07-24
-blocked-by: [frontend-test-infra]
+blocked-by: []  # was frontend-test-infra; shipped
 ---
 
 # Add a test-only GitHub Actions workflow
@@ -34,4 +34,4 @@ Check this first; it is the one thing that could grow the ticket beyond ~30 line
 
 - `.github/workflows/tests.yml`, triggered on push.
 - Backend job: setup Python, `pip install -r backend/requirements.txt`, run pytest.
-- Frontend job: setup Node, `npm ci`, `vitest run` (exists only after frontend-test-infra lands - hence blocked-by).
+- Frontend job: setup Node, `npm ci`, `vitest run` (frontend test infra shipped, so this exists).

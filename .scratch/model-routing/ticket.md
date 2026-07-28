@@ -11,7 +11,7 @@ Usage accounting (built 2026-07-20, `LlmUsage` table + `/admin`) now makes per-c
 ## Leaning
 
 - A small optional `model`/`tier` arg on the `LLMClient` methods; route cheap deterministic call sites (execution analysis, edit summaries, clean-up passes) to a smaller model, keep the big model for planning + chat.
-- `instance_settings` is the natural config home (noted in `.scratch/coach-toggles/spec.md`).
+- `instance_settings` is the natural config home (per the coach-toggles work, docs/adr/0003).
 - Couples with [[llm-seam-extraction]]: if the seam extracts first, the tier arg is a library interface change - coordinate.
 
 ## Riders (small, same area)

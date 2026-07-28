@@ -27,12 +27,10 @@ The pin naturally expires when the day passes (status leaves `planned`), so hist
 3. Should the snapshot mark pinned days explicitly so the model plans the rest of the week around them, instead of producing a day that then gets dropped on write?
 4. Does the same reasoning apply to `set_day_intent` days beyond the existing run-coercion guard?
 
-## Interaction with hr-band-targets
+## Interaction with HR band validation (resolved)
 
-See `.scratch/hr-band-targets/ticket.md`: a `chat_edit` day can carry a degenerate zero-width HR band (one exists in production).
-If pins land before that ticket's chat-tool width validation, such a day gets pinned - preserving bad data the nightly author run would otherwise have regenerated, and re-anchoring the model on it via `current_upcoming_plan`.
-Ordering: land the HR band validation no later than pins, and consider excluding validation-failing days from pin protection.
-This also adds weight to open question 3 (mark pinned days in the snapshot): if the model plans around pins, what a pin preserves must itself be sound.
+The zero-width HR band fix shipped (ADR 0017, commit 08bdd89), including clamping in `create_pending_edit`, so a `chat_edit` day can no longer carry a degenerate band and the ordering concern - pins preserving bad data - is moot.
+Still adds weight to open question 3 (mark pinned days in the snapshot): if the model plans around pins, what a pin preserves must itself be sound.
 
 ## Pointers
 

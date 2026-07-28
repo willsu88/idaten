@@ -6,7 +6,7 @@ The current tunnel setup it describes is documented generically in `start.sh`'s 
 
 ## Current local setup (the Mac, until the VPS move)
 
-The app runs on Will's Mac behind a Cloudflare **named tunnel** (`idaten` -> `idaten.williamsu.me`).
+The app runs on the maintainer's Mac behind a Cloudflare **named tunnel** mapping the tunnel to the production domain.
 
 `start.sh` and `stop.sh` now own that tunnel, so it is no longer started by hand.
 This was the cause of repeated Cloudflare **Error 1033** (tunnel configured but no connector dialing in):
@@ -15,7 +15,7 @@ So it vanished on every sleep / logout / reboot.
 
 `start.sh` supports two tunnel modes:
 
-- `./start.sh` - **named** tunnel to `idaten.williamsu.me` (default). Host `cloudflared` binary + `~/.cloudflared/config.yml`, run in the background (`.cloudflared.pid` / `.cloudflared.log`).
+- `./start.sh` - **named** tunnel to the production domain (default). Host `cloudflared` binary + `~/.cloudflared/config.yml`, run in the background (`.cloudflared.pid` / `.cloudflared.log`).
 - `./start.sh quick` - throwaway random `trycloudflare.com` URL via a `cloudflared` Docker container. For one-off testing.
 
 `stop.sh` tears down whichever is running (container + host process).
@@ -26,7 +26,7 @@ True auto-start-on-boot would need a `launchd` LaunchAgent; the real long-term f
 
 ## The decision
 
-Move the app off Will's Mac in Taiwan onto an always-on VPS in **Tokyo or Singapore**, keep the existing Cloudflare tunnel in front, and put a real domain on it.
+Move the app off the maintainer's Mac onto an always-on VPS in a region near the daily users (**Tokyo or Singapore**), keep the existing Cloudflare tunnel in front, and put a real domain on it.
 Target cost: **~$15-25/month all in** (VPS ~$12-24/mo + domain ~$10-15/yr).
 
 ### Why move at all - reliability, not latency
@@ -34,23 +34,23 @@ Target cost: **~$15-25/month all in** (VPS ~$12-24/mo + domain ~$10-15/yr).
 The Mac is the wrong host for inviting friends for one reason, and it is not speed:
 
 - **Reliability.** The Mac sleeps (we keep a `caffeinate` process pinned just to fight this), reboots for OS updates, and rides a home ISP dynamic IP and home power.
-When it is 3am in Taiwan and the Mac is asleep, US friends are mid-day and the app is simply down.
+When it is 3am for the household and the Mac is asleep, friends many timezones away are mid-day and the app is simply down.
 - **Latency is a red herring for this app.** Idaten is a coaching dashboard, not a real-time game.
 The slow operations (LLM calls, Garmin sync) take seconds regardless of where the box sits.
-A US friend feels roughly 150ms extra per API call - "slightly less snappy," not "broken."
+A remote friend feels roughly 150ms extra per API call - "slightly less snappy," not "broken."
 
 So the move is about uptime for a second timezone, not shaving milliseconds.
 
 ### Why Tokyo/Singapore and not Civo (or a US host)
 
-Daily users (Will + gf) are in **Taiwan**; friends trying it out are in the **US**.
+The two daily users share one household; friends trying it out are many timezones away.
 We cannot be physically near both, so we optimize for the people who use it every day and accept "acceptable" for occasional users.
 
-| Server location | Will + gf (Taiwan) | US friends | Verdict |
+| Server location | Daily users (household) | Remote friends | Verdict |
 |---|---|---|---|
-| Mac in Taiwan | ~10ms | ~150-200ms | Fine for us, unreliable for everyone |
-| **Tokyo / Singapore VPS** | **~40-70ms** | **~120-170ms** | **Fast for us, fine for friends** |
-| Civo (NYC / London / Frankfurt) | ~180-250ms | ~20-80ms | Fast for friends, sluggish for us daily |
+| Mac at home | ~10ms | ~150-200ms | Fine for the household, unreliable for everyone |
+| **Tokyo / Singapore VPS** | **~40-70ms** | **~120-170ms** | **Fast for the household, fine for friends** |
+| Civo (NYC / London / Frankfurt) | ~180-250ms | ~20-80ms | Fast for friends, sluggish for the household daily |
 
 **Civo is the wrong pick here**, for two independent reasons:
 
@@ -59,7 +59,7 @@ We cannot be physically near both, so we optimize for the people who use it ever
 It is not a cost problem (small instances are ~$5-10/mo) - it is wrong region + wrong abstraction.
 Leftover FindLabs credits, if any, are better spent elsewhere.
 
-Keeping **Cloudflare in front** (already in use via the tunnel) caches the Next.js static assets on its global edge, so US friends only pay the round-trip on real API calls, not on page loads.
+Keeping **Cloudflare in front** (already in use via the tunnel) caches the Next.js static assets on its global edge, so remote friends only pay the round-trip on real API calls, not on page loads.
 That is most of the benefit of a fancy edge deploy, for free, with zero new moving parts, plus free HTTPS (which our `COOKIE_SECURE=true` / `secure=True` cookie requires).
 
 ## Migration runbook
@@ -101,7 +101,7 @@ Use the in-container SQLite backup API to produce a single consistent `.db` file
 If this value changes, existing encrypted Garmin passwords become undecryptable and every member must re-enter their Garmin credentials.
 - [ ] `COOKIE_SECURE=true` - required now that we have real HTTPS via Cloudflare.
 - [ ] `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`, `LLM_PROVIDER`, model names - carry over.
-- [ ] `TZ=Asia/Taipei` in compose - **keep it.** The daily job hour and all date logic assume the household is in Taiwan; a nearby region keeps that model clean.
+- [ ] `TZ` in compose - **keep it set to the household's timezone.** The daily job hour and all date logic assume the household's local time; picking a nearby VPS region keeps that model clean.
 - [ ] `GARMIN_*` / `INITIAL_*` - these only seed an empty DB; with a restored DB they are inert, but keep `.env` complete.
 
 ### 5. Domain + Cloudflare cutover
@@ -114,9 +114,9 @@ A plain page load passing is not enough; watch a chat reply stream token by toke
 
 ### 6. Verify the friend-invite path
 
-- [ ] Log in as admin (Will): `/admin` renders, roster + usage cards present.
-- [ ] Log in as a non-admin (gf): no Admin nav item, `/admin` redirects home, Settings is purely personal.
-- [ ] Generate one real invite link and have a US friend complete signup + Garmin connect end to end from the US, on their phone.
+- [ ] Log in as the admin (user 1): `/admin` renders, roster + usage cards present.
+- [ ] Log in as a non-admin (user 2): no Admin nav item, `/admin` redirects home, Settings is purely personal.
+- [ ] Generate one real invite link and have a remote friend complete signup + Garmin connect end to end from their region, on their phone.
 - [ ] Confirm login throttle (429 after repeated bad passwords) still behaves on the new box.
 
 ### 7. Decommission the Mac
@@ -128,10 +128,10 @@ A plain page load passing is not enough; watch a chat reply stream token by toke
 ## Alternatives considered (not chosen)
 
 - **Frontend on Vercel (free, global edge) + API on the Tokyo VPS.**
-Snappiest possible page loads for US friends, but it splits one clean `docker-compose` into two deploys and reopens cross-origin CORS/SSE - exactly the area with two prior scars.
+Snappiest possible page loads for remote friends, but it splits one clean `docker-compose` into two deploys and reopens cross-origin CORS/SSE - exactly the area with two prior scars.
 Revisit only if friends complain after the Cloudflare-in-front setup.
-- **US VPS instead of Tokyo.**
-Only correct if the friend trial becomes the primary use and we two become secondary.
+- **VPS in the friends' region instead of Tokyo.**
+Only correct if the friend trial becomes the primary use and the daily users become secondary.
 Not true today.
 
 ## Open items to confirm at execution time

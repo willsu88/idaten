@@ -18,7 +18,7 @@ Each persona is an LLM with a character brief plus a scripted fixture world (det
 
 - Extends the existing eval harness (`backend/tests/test_evals.py`): fixture world + tool-call recorder already exist; this adds a persona driver on the user side of the loop.
 - Runs as an opt-in pytest marker like the current evals (`-m eval` pattern), plus optionally as a pre-release smoke script.
-- Grading reuses the rubric from [[coach-qa-scorecards]] - build that first so simulation has a scoring target.
+- Grading reuses the QA scorecard rubric (shipped - ADR 0016, `backend/app/qa.py`), so the scoring target exists.
 - Determinism discipline: personas may be stochastic, but the world (activities, readiness, plan) is fixed, so trajectory assertions on tool calls stay meaningful.
 
 ## Open questions

@@ -7,5 +7,5 @@ Per-member overrides can be layered on later without moving the enforcement seam
 ## Consequences
 
 - A toggle governs LLM generation only: deterministic machinery (execution scoring, sync, plan materialization) never checks it, artifacts written before a flip stay readable, and re-enabling resumes forward-only with no backfill (weeks skipped while off are permanent gaps, the same rule as pre-launch weeks).
-- The daily review deliberately has no toggle in v1: it is load-bearing (plan proposals, Garmin plan refresh, the Today page anchor), so switching it off is a product-degradation decision we deferred - see `.scratch/coach-toggles/spec.md`.
+- The daily review deliberately has no toggle in v1: it is load-bearing (plan proposals, Garmin plan refresh, the Today page anchor), so switching it off is a product-degradation decision we deferred - see the coach-toggles spec in git history.
 - `instance_settings` is the home for future instance-wide operator policy (e.g. model-routing config), keeping the per-user `settings` table free of deployment concerns.

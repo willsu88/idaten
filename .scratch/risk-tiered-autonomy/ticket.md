@@ -2,7 +2,7 @@
 
 Filed 2026-07-27 from a product brainstorm. Status: parked.
 Industry analog: risk-rated actions - optimistic execution with the approval gate only on high-stakes operations.
-Recommended build order: good small **second** build after [[coach-qa-scorecards]].
+Recommended build order: good small build now that coach QA scorecards shipped (ADR 0016) - the prerequisite is met.
 
 ## The idea
 

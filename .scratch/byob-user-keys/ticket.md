@@ -5,7 +5,7 @@ Filed 2026-07-27 (deferred repeatedly since 2026-07-20, ROADMAP - dissolved into
 ## The shape (decided direction)
 
 WHO PAYS is a different axis from authorization.
-Today one shared instance key funds everyone - correct for the private household (Will wants to pay for a few friends; usage accounting + the message rate limiter give visibility and a cap).
+Today one shared instance key funds everyone - correct for the private household (the admin wants to pay for a few friends; usage accounting + the message rate limiter give visibility and a cap).
 For open-source, the right eventual shape is hybrid: instance default key (admin's) with an optional per-user override, resolved per-user-with-instance-fallback.
 
 ## Constraints
