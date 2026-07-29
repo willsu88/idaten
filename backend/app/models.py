@@ -466,6 +466,10 @@ class ChatMessage(Base):
     # kind "tool_call": payload = {"name", "args", "result"}; content stays empty
     # so history replay skips it. The QA judge reads these as the ground truth
     # the coach's claims are checked against (ADR 0016).
+    # kind "context": payload = {"hash", "data"}; the hydrated dynamic fills of
+    # the system prompt, snapshotted at the turn that saw them and deduped per
+    # session (ADR 0019). Same ground-truth role as tool_call rows; empty
+    # content keeps them out of history replay and the member-facing history.
     kind: Mapped[str] = mapped_column(String, default="text")
     content: Mapped[str] = mapped_column(Text, default="")
     payload: Mapped[Any] = mapped_column(JSON, nullable=True)

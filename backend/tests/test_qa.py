@@ -351,6 +351,82 @@ def test_run_chat_persists_tool_calls_stamped_and_replay_skips_them(db, user, mo
     assert all("42.0" not in m["content"] or m["role"] == "assistant" for m in history)
 
 
+# --- chat side: context snapshots (ADR 0019) ------------------------------------
+
+def _run_turn(db, user, monkeypatch, session_id=None, message="how far this week?"):
+    monkeypatch.setattr(chat_agent, "make_client",
+                        lambda provider=None, **_kw: ToolThenTextStub())
+    monkeypatch.setattr(chat_agent, "dispatch",
+                        lambda db_, uid, name, args: ('{"km": 42.0}', None))
+    events = list(chat_agent.run_chat(db, user, session_id, message))
+    return next(e["session_id"] for e in events if e["type"] == "session")
+
+
+def test_run_chat_snapshots_context_before_the_turn_and_dedups(db, user, monkeypatch):
+    sid = _run_turn(db, user, monkeypatch)
+    _run_turn(db, user, monkeypatch, session_id=sid, message="and my long run?")
+
+    rows = db.scalars(select(ChatMessage)
+                      .where(ChatMessage.session_id == sid,
+                             ChatMessage.kind == "context")).all()
+    # Two turns, unchanged context: exactly one snapshot row.
+    assert len(rows) == 1
+    (ctx,) = rows
+    assert ctx.role == "system" and ctx.content == ""
+    assert ctx.prompt_version == chat_agent.chat_prompt_version(get_settings(db, user.id))
+    assert set(ctx.payload["data"]) == {
+        "name", "today", "races", "athlete", "training_mode", "hr_zones",
+        "pace_profile", "garmin_plan", "readiness", "niggles", "strength"}
+    # The snapshot is what the model saw: the template hydrates from it alone.
+    assert f"Today is {ctx.payload['data']['today']}" in \
+        chat_agent.SYSTEM_TEMPLATE.format(**ctx.payload["data"])
+    first_user = db.scalars(
+        select(ChatMessage).where(ChatMessage.session_id == sid,
+                                  ChatMessage.role == "user")
+        .order_by(ChatMessage.id)).first()
+    assert ctx.id < first_user.id  # precedes the turn it governed
+
+
+def test_changed_context_writes_a_second_snapshot(db, user, monkeypatch):
+    sid = _run_turn(db, user, monkeypatch)
+    monkeypatch.setattr(chat_agent.niggles_mod, "active_niggles",
+                        lambda db_, uid, today: [{"id": 1, "body_part": "knee",
+                                                  "severity": 1}])
+    _run_turn(db, user, monkeypatch, session_id=sid, message="my knee aches")
+    rows = db.scalars(select(ChatMessage)
+                      .where(ChatMessage.session_id == sid,
+                             ChatMessage.kind == "context")
+                      .order_by(ChatMessage.id)).all()
+    assert len(rows) == 2
+    assert "knee" in rows[1].payload["data"]["niggles"]
+    assert rows[0].payload["hash"] != rows[1].payload["hash"]
+
+
+def test_render_transcript_interleaves_context_blocks(db, user):
+    _msg(db, user.id, "s1", "system", "", YESTERDAY - dt.timedelta(minutes=3),
+         kind="context", pv="abc123def456",
+         payload={"hash": "h1", "data": {"niggles": '[{"body_part": "knee"}]'}})
+    _seed_session(db, user.id, "s1", at=YESTERDAY)
+    transcript, pv, _date = qa.render_transcript(db, user.id, "s1")
+    assert transcript.startswith("[context]\n")
+    assert 'niggles: [{"body_part": "knee"}]' in transcript
+    assert transcript.index("[context]") < transcript.index("[user]")
+    assert pv == "abc123def456"
+    # Context rows never leak into model history replay.
+    history = chat_agent._load_history(db, user.id, "s1")
+    assert all("knee" not in m["content"] for m in history)
+
+
+def test_chat_history_endpoint_hides_context_rows(db, user, client):
+    _msg(db, user.id, "s1", "system", "", YESTERDAY - dt.timedelta(minutes=3),
+         kind="context", payload={"hash": "h1", "data": {"niggles": "none"}})
+    _seed_session(db, user.id, "s1", at=YESTERDAY)
+    _login(client)
+    kinds = [m["kind"] for m in client.get("/api/chat/history",
+                                           params={"session_id": "s1"}).json()]
+    assert "context" not in kinds and len(kinds) == 2
+
+
 # --- API: admin summary, toggle key, history filtering --------------------------
 
 def _login(client, username="will", password="secret1"):

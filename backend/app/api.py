@@ -2101,8 +2101,9 @@ def chat_history(session_id: str, db: Session = Depends(get_db),
     ).all()
     out = []
     for r in rows:
-        # tool_call rows are QA/debug provenance (ADR 0016), not conversation.
-        if r.kind == "tool_call":
+        # tool_call and context rows are QA/debug provenance (ADR 0016/0019),
+        # not conversation.
+        if r.kind in ("tool_call", "context"):
             continue
         msg = {
             "role": r.role,

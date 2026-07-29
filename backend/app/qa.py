@@ -4,8 +4,9 @@ A scheduled job grades every chat session that has gone quiet against the
 rubric below: one fail-closed judge call per (session, rubric item), verdicts
 stored as QaScore rows. The judge runs on its own provider/model (config
 `judge_provider` / `judge_model`) so the coach is never graded by its own
-model family, and it reads the full transcript plus persisted tool calls so
-grounding claims are checked against what the tools actually returned.
+model family, and it reads the full transcript plus persisted tool calls and
+context snapshots (ADR 0019) so grounding claims are checked against what the
+tools returned and what the system prompt handed the coach.
 
 The rubric lives here, in code, on purpose: it is behavior-defining text, so
 it changes the way prompts change - by deploy, with git history - and its hash
@@ -49,11 +50,15 @@ RUBRIC: tuple[RubricItem, ...] = (
         call_sites=("chat",),
         criteria=(
             "Every metric the assistant states (distances, paces, heart rates, "
-            "dates, workout details) must appear in, or be directly readable "
-            "from, the tool results shown. Fail if the assistant asserts a "
-            "specific number or data-backed fact that no tool result supports. "
-            "General coaching knowledge that cites no specific personal data "
-            "does not fail this item."
+            "dates, workout details, injuries) must appear in, or be directly "
+            "readable from, the tool results or [context] blocks shown. A "
+            "[context] block is the data the assistant was handed before "
+            "answering (races, readiness, active niggles, recent paces); it "
+            "grounds a claim exactly like a tool result does. Fail if the "
+            "assistant asserts a specific number or data-backed fact that "
+            "neither a tool result nor a [context] block supports. General "
+            "coaching knowledge that cites no specific personal data does not "
+            "fail this item."
         ),
     ),
     RubricItem(
@@ -94,7 +99,8 @@ JUDGE_SCHEMA = {
 JUDGE_SYSTEM = (
     "You are a strict evaluator of a running-coach assistant's conduct across "
     "one full chat session. Judge ONLY the stated criteria against the "
-    "transcript and the tool results (the tool results are ground truth). "
+    "transcript, the tool results, and any [context] blocks (tool results and "
+    "[context] blocks are ground truth). "
     "Return applicable=false only when the situation the criteria covers never "
     "arose. When applicable and in doubt, return passed=false. In `reason`, "
     "describe the failure or pass in your own words; never quote the user's "
@@ -104,9 +110,11 @@ JUDGE_SYSTEM = (
 
 def rubric_version() -> str:
     """Short stable hash of the rubric content - the `rubric_version` stamp.
-    Any change to keys or criteria resets what trend lines mean."""
+    Any change to keys, criteria, or the judge's own instructions resets what
+    trend lines mean; JUDGE_SYSTEM is behavior-defining text, so editing it
+    without a version bump would silently shift verdict semantics."""
     blob = "\n".join(f"{i.key}|{','.join(i.call_sites)}|{i.criteria}" for i in RUBRIC)
-    return hashlib.sha256(blob.encode()).hexdigest()[:12]
+    return hashlib.sha256((blob + "\n" + JUDGE_SYSTEM).encode()).hexdigest()[:12]
 
 
 def _local_midnight_utc(now_utc: dt.datetime) -> dt.datetime:
@@ -201,7 +209,9 @@ def render_transcript(
     rows = db.scalars(
         select(ChatMessage)
         .where(ChatMessage.user_id == user_id, ChatMessage.session_id == session_id)
-        .order_by(ChatMessage.created_at)
+        # id tiebreak: context rows share a commit (and can share a microsecond)
+        # with the user turn they precede; insertion order must win the tie.
+        .order_by(ChatMessage.created_at, ChatMessage.id)
     ).all()
     parts: list[str] = []
     prompt_version: str | None = None
@@ -214,6 +224,12 @@ def render_transcript(
                 f"[tool call] {p.get('name')}({json.dumps(p.get('args'), default=str)})\n"
                 f"[tool result] {p.get('result')}"
             )
+        elif r.kind == "context":
+            # The fills are already-rendered strings; key: value lines read the
+            # way the hydrated template did, without double-escaped JSON.
+            data = (r.payload or {}).get("data") or {}
+            fills = "\n".join(f"{k}: {v}" for k, v in data.items())
+            parts.append(f"[context]\n{fills}")
         elif r.content:
             parts.append(f"[{r.role}] {r.content}")
     artifact_date = _as_local_date(rows[-1].created_at) if rows else None

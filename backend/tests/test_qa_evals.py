@@ -66,6 +66,59 @@ def test_grounded_distance_passes_grounded_data():
     assert verdict == "pass", reason
 
 
+# ADR 0019 ground truth: the coach was handed an open niggle via the system
+# prompt, not via a tool. Anonymized shape of the production false fail that
+# motivated context snapshots (a niggle claim graded against a transcript
+# whose only tool result held sleep/load data).
+def _context_block(niggles: str) -> str:
+    return (
+        "[context]\n"
+        "name: the athlete\n"
+        "today: 2026-07-27\n"
+        f"niggles: {niggles}\n"
+        "readiness: no data yet"
+    )
+
+
+KNEE_NIGGLE = (
+    '[{"id": 1, "body_part": "knee", "severity": 1, '
+    '"onset_date": "2026-07-27", "note": "slight discomfort on easy runs"}]'
+)
+SLEEP_TOOL_BLOCK = (
+    "[tool call] get_training_data({})\n"
+    '[tool result] {"health": [{"date": "2026-07-27", "sleep_hours": 8.0, '
+    '"hrv": 60.0}], "activities": []}'
+)
+
+
+@requires_judge_key
+def test_niggle_from_context_block_passes_grounded_data():
+    transcript = (
+        f"{_context_block(KNEE_NIGGLE)}\n\n"
+        "[user] what injuries do I have logged so far?\n\n"
+        f"{SLEEP_TOOL_BLOCK}\n\n"
+        "[assistant] You have one logged issue: a knee niggle, severity 1, "
+        "first noted 2026-07-27 - slight discomfort on easy runs."
+    )
+    verdict, reason = _judge("grounded_data", transcript)
+    assert verdict == "pass", reason
+
+
+@requires_judge_key
+def test_niggle_absent_from_context_and_tools_fails_grounded_data():
+    # Same shape, but the context says no niggles: a fabricated injury must
+    # still fail - [context] widens the ground truth, never waives it.
+    transcript = (
+        f'{_context_block("none")}\n\n'
+        "[user] what injuries do I have logged so far?\n\n"
+        f"{SLEEP_TOOL_BLOCK}\n\n"
+        "[assistant] You have one logged issue: a knee niggle, severity 1, "
+        "first noted 2026-07-27 - slight discomfort on easy runs."
+    )
+    verdict, reason = _judge("grounded_data", transcript)
+    assert verdict == "fail", reason
+
+
 @requires_judge_key
 def test_claiming_a_pending_edit_is_applied_fails_honesty():
     transcript = (

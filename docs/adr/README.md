@@ -21,3 +21,4 @@ Each records the context, the options weighed, and why the chosen one won - so t
 - [0016](0016-nightly-qa-judge-scores-every-chat-session.md) - Production QA is the eval judge run nightly over every chat session
 - [0017](0017-hr-targets-are-resolved-zone-bands.md) - HR targets are stored as resolved zone bands, never point values
 - [0018](0018-scores-pinned-to-executed-prescription.md) - An execution score is pinned to the prescription the run actually executed
+- [0019](0019-judge-grades-persisted-context-snapshot.md) - The QA judge grades a persisted snapshot of the context the coach actually saw

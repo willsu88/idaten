@@ -14,6 +14,7 @@ API layer serializes as SSE:
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 import logging
 import queue
@@ -159,30 +160,64 @@ def chat_prompt_version(settings: dict) -> str:
     return prompt_version(SYSTEM_TEMPLATE + style_prompt(settings))
 
 
-def _system_prompt(db: Session, user: User) -> str:
+def _dynamic_context(db: Session, user: User, settings: dict) -> dict[str, str]:
+    """The dynamic fills hydrated into SYSTEM_TEMPLATE - everything the coach
+    can ground a claim in without a tool call. Returned as the exact rendered
+    strings so the persisted snapshot (ADR 0019) is what the model saw, not a
+    re-derivation."""
     from ..garmin.training_plan import garmin_plan_context
-    from ..planner import _athlete_block, _hr_zones, style_prompt
+    from ..planner import _athlete_block, _hr_zones
     from ..races import prediction_context, race_dict, upcoming_races
 
     today = dt.date.today()
-    settings = get_settings(db, user.id)
     readiness = metrics.readiness(db, user.id, today)
     ctx = prediction_context(db, user.id, today)
     races = [_chat_race(race_dict(r, ctx)) for r in upcoming_races(db, user.id)]
-    return SYSTEM_TEMPLATE.format(
-        name=user.display_name or "the athlete",
-        today=today.isoformat(),
-        races=json.dumps(races) if races else "none set",
-        athlete=json.dumps(_athlete_block(db, user.id, settings)),
-        training_mode=settings.get("training_mode"),
-        hr_zones=json.dumps(_hr_zones(db, user.id)),
-        pace_profile=json.dumps(metrics.pace_profile(db, user.id, today)),
-        garmin_plan=json.dumps(garmin_plan_context(db, user.id, today)),
-        readiness=json.dumps(readiness) if readiness else "no data yet",
-        niggles=json.dumps(niggles_mod.active_niggles(db, user.id, today) or "none"),
-        strength=json.dumps(
+    return {
+        "name": user.display_name or "the athlete",
+        "today": today.isoformat(),
+        "races": json.dumps(races) if races else "none set",
+        "athlete": json.dumps(_athlete_block(db, user.id, settings)),
+        "training_mode": str(settings.get("training_mode")),
+        "hr_zones": json.dumps(_hr_zones(db, user.id)),
+        "pace_profile": json.dumps(metrics.pace_profile(db, user.id, today)),
+        "garmin_plan": json.dumps(garmin_plan_context(db, user.id, today)),
+        "readiness": json.dumps(readiness) if readiness else "no data yet",
+        "niggles": json.dumps(niggles_mod.active_niggles(db, user.id, today) or "none"),
+        "strength": json.dumps(
             support_mod.strength_signal(db, user.id, today, settings) or "off"),
-    ) + style_prompt(settings)
+    }
+
+
+def _system_prompt(settings: dict, context: dict[str, str]) -> str:
+    from ..planner import style_prompt
+
+    return SYSTEM_TEMPLATE.format(**context) + style_prompt(settings)
+
+
+def _snapshot_context(db: Session, user_id: int, session_id: str,
+                      context: dict[str, str], pv: str) -> None:
+    """Persist the hydrated context as a kind="context" row (ADR 0019): the QA
+    judge grades a record of what the coach saw, never a reconstruction.
+    Deduped - a row is written only when the context differs from the session's
+    last snapshot. Empty content keeps it out of history replay."""
+    # Full digest, not a truncated one: a collision here silently keeps stale
+    # context in front of the judge, the exact failure class ADR 0019 closes.
+    digest = hashlib.sha256(
+        json.dumps(context, sort_keys=True).encode()).hexdigest()
+    last = db.scalars(
+        select(ChatMessage)
+        .where(ChatMessage.user_id == user_id,
+               ChatMessage.session_id == session_id,
+               ChatMessage.kind == "context")
+        .order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc())
+        .limit(1)
+    ).first()
+    if last is not None and (last.payload or {}).get("hash") == digest:
+        return
+    db.add(ChatMessage(user_id=user_id, session_id=session_id, role="system",
+                       kind="context", prompt_version=pv,
+                       payload={"hash": digest, "data": context}))
 
 
 def _load_history(db: Session, user_id: int, session_id: str) -> list[dict[str, Any]]:
@@ -230,10 +265,14 @@ def run_chat(db: Session, user: User, session_id: str | None, user_message: str,
     llm_text = llm_text or user_message
     settings = get_settings(db, user.id)
     client = make_client(settings.get("llm_provider"), user_id=user.id, call_site="chat")
-    system = _system_prompt(db, user)
+    context = _dynamic_context(db, user, settings)
+    system = _system_prompt(settings, context)
     pv = chat_prompt_version(settings)
     messages = _load_history(db, user.id, session_id)
     messages.append({"role": "user", "content": llm_text})
+    # Snapshot before the user row so the [context] block precedes the turn it
+    # governed in the judge's transcript (ADR 0019).
+    _snapshot_context(db, user.id, session_id, context, pv)
     db.add(ChatMessage(user_id=user.id, session_id=session_id, role="user",
                        content=user_message, kind=kind,
                        payload={"llm_text": llm_text} if llm_text != user_message else None))
