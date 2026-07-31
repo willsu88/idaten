@@ -213,6 +213,113 @@ def test_planner_builds_structured_week_within_budget(db, user):
             assert payload["workoutSegments"][0]["workoutSteps"]
 
 
+# --- cycle-aware forward generation ---------------------------------------------
+
+def _seed_planner_profile(db, user_id: int) -> None:
+    from app.settings_store import GARMIN_PROFILE_KEY, put_internal
+
+    put_internal(db, user_id, GARMIN_PROFILE_KEY, {
+        "gender": "female", "weight_kg": 60.0, "height_cm": 165.0,
+        "birth_date": "1995-03-14", "lthr": 186, "vo2max_running": 52,
+        "fetched_at": TODAY.isoformat(),
+    })
+
+
+def _seed_cycle_world(db, user_id: int, anchor_days_ago: int) -> dict[str, bool]:
+    """seed_world + planner profile + cycle tracking anchored `anchor_days_ago`
+    days back (28-day cycle, 5-day period). Returns the ground-truth
+    date -> ease_recommended map for the week starting TODAY."""
+    from app.metrics import cycle_upcoming
+    from app.settings_store import get_settings, put_settings
+
+    seed_world(db, user_id)
+    _seed_planner_profile(db, user_id)
+    put_settings(db, user_id, {"cycle": {
+        "enabled": True,
+        "last_start_date": (TODAY - dt.timedelta(days=anchor_days_ago)).isoformat(),
+        "cycle_length_days": 28, "period_length_days": 5,
+    }})
+    up = cycle_upcoming(get_settings(db, user_id)["cycle"], TODAY, days=7)
+    return {u["date"]: u["ease_recommended"] for u in up}
+
+
+def _generated_week(db, user_id: int) -> list:
+    from app.models import PlanDay
+    from app.planner import generate_plan
+
+    generate_plan(db, user_id, source="eval")
+    return (db.query(PlanDay)
+            .filter(PlanDay.user_id == user_id, PlanDay.date >= TODAY)
+            .order_by(PlanDay.date).all())[:7]
+
+
+@requires_real_key
+def test_generator_keeps_flagged_cycle_days_easy_with_a_warm_rationale(db, user):
+    """The reported bug: the forward generator must not place quality on days
+    where code flagged `ease_recommended` (premenstrual + early flow), and the
+    eased days' rationales must carry it warmly, never clinically."""
+    from app.models import PlanDay
+    from app.planner import QUALITY_TYPES
+    from tests.test_persona_evals import tone_judge
+
+    # Anchor 24 days ago on a 28-day cycle: today is day 25 (luteal, unflagged);
+    # days 26-28 (premenstrual) and days 1-2 of the next flow are flagged.
+    flags = _seed_cycle_world(db, user.id, anchor_days_ago=24)
+    # Precondition: the fixture plan really parks quality on a flagged day, so a
+    # cycle-blind generator preserving the plan would fail the assertion below.
+    fixture_quality = [d for d in db.query(PlanDay).filter(PlanDay.user_id == user.id).all()
+                       if flags.get(d.date.isoformat()) and d.workout_type in QUALITY_TYPES]
+    assert fixture_quality, "fixture error: no quality parked on a flagged day"
+
+    days = _generated_week(db, user.id)
+    assert all(d.date.isoformat() in flags for d in days), \
+        "generated week extends past the ground-truth flag window"
+    offenders = [d for d in days
+                 if flags[d.date.isoformat()] and d.workout_type in QUALITY_TYPES]
+    assert not offenders, (
+        f"quality placed on ease-flagged days: "
+        f"{[(d.date.isoformat(), d.workout_type) for d in offenders]}")
+
+    eased_rationales = "\n".join(
+        f"{d.date.isoformat()} ({d.workout_type}): {d.rationale}"
+        for d in days if flags[d.date.isoformat()])
+    # Meaning (fail-closed): the cycle is named as the reason for easing.
+    assert_judge(
+        "At least one of these plan-day rationales acknowledges the athlete's "
+        "menstrual cycle (period / premenstrual days) as a reason for keeping "
+        "the day lighter.",
+        eased_rationales,
+    )
+    # Voice (fail-open, per docs/TESTING.md): only a CLEAR violation fails.
+    verdict = tone_judge(
+        "The rationales speak about the athlete's menstrual cycle with warmth "
+        "and care — never clinically, condescendingly, or guilt-inducingly.",
+        eased_rationales,
+    )
+    assert verdict["passed"], f"{verdict['reason']}\n--- rationales ---\n{eased_rationales}"
+
+
+@requires_real_key
+def test_generator_does_not_suppress_quality_in_follicular_week(db, user):
+    """The over-generalization guard: a fully follicular week on green readiness
+    must still get its quality — 'cycle present' must not mean 'be gentle
+    everywhere'. Mechanical assertions only; no judge needed."""
+    from app.planner import QUALITY_TYPES, build_snapshot
+
+    # Anchor 7 days ago: the whole upcoming week is days 8-14 — follicular,
+    # nothing flagged, and readiness in the fixture world is green.
+    flags = _seed_cycle_world(db, user.id, anchor_days_ago=7)
+    assert not any(flags.values()), "fixture error: follicular week must be unflagged"
+
+    snapshot = build_snapshot(db, user.id, TODAY)
+    assert snapshot["quality_budget"] >= 1, "fixture world should afford quality"
+
+    days = _generated_week(db, user.id)
+    quality = [d for d in days if d.workout_type in QUALITY_TYPES]
+    assert quality, ("follicular week with green readiness lost all quality — "
+                    "the cycle guidance is over-easing")
+
+
 # --- daily review evals (editor-above-the-DSW) ---------------------------------
 
 def _hard(date: dt.date) -> dict:

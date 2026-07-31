@@ -251,6 +251,28 @@ def cycle_phase(cycle: dict | None, date: dt.date) -> dict | None:
     }
 
 
+def cycle_upcoming(cycle: dict | None, start: dt.date, days: int = 7) -> list[dict] | None:
+    """Per-day cycle placement facts for the plan horizon starting at `start`.
+
+    The forward generator writes a week ahead, so it needs `ease_recommended`
+    as a precomputed fact for each upcoming day — never derived by the model
+    from `next_period_date` date arithmetic. Just `cycle_phase` looped over
+    the horizon, trimmed to the placement-relevant keys. None when tracking
+    is off, same contract as `cycle_phase`."""
+    days_out = []
+    for i in range(days):
+        day = start + dt.timedelta(days=i)
+        p = cycle_phase(cycle, day)
+        if p is None:
+            return None
+        days_out.append({
+            "date": day.isoformat(),
+            "phase": p["phase"],
+            "ease_recommended": p["ease_recommended"],
+        })
+    return days_out
+
+
 def show_started_prompt(phase: dict | None, confirmed_start, snooze_date, today: dt.date) -> bool:
     """Whether to offer the one-tap "did your period start today?" confirm.
 

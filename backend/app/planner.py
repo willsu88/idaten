@@ -156,6 +156,19 @@ Principles:
 - Non-primary races are tune-ups: schedule them as "race" days at sub-maximal intent,
   keep the days before them easy, and allow 2-4 recovery days after depending on distance.
 - Recent RPE feedback matters: if the athlete rated recent sessions very hard, ease off.
+- menstrual_cycle (only present if the athlete tracks it): its `upcoming` list
+  gives every day of the week you are writing a precomputed `phase` and
+  `ease_recommended` flag — trust the flags, never re-derive them from dates.
+  On a day where `ease_recommended` is true (the 2-3 premenstrual days and the
+  first 1-2 flow days), do NOT place a quality session or the week's hardest
+  long run: prefer easy or recovery work there, and on a very low-readiness
+  early-flow day consider rest. Conversely, on `follicular` days many athletes
+  feel strongest — when readiness is also good AND no severity >= 2 niggle is
+  open, place the week's quality sessions there with confidence rather than
+  hesitation. This is a gentle bias, not a hard rule: don't churn a sound plan,
+  don't invent hard work the plan doesn't need, and let the affected days'
+  rationales acknowledge it with care and warmth (e.g. "keeping this one
+  lighter with your cycle in mind"), never clinically.
 - load_ramp is the multi-week volume guardrail (7d vs 28d load). Keep the planned
   week's volume such that `planned_next_week.acwr_if_executed` stays at or below
   ~1.3; when `chronic_trend` is 'detraining', rebuild volume gently (~10%/week)
@@ -416,6 +429,18 @@ def quality_budget(readiness: dict | None, acwr: float | None, phase: str) -> in
     return budget
 
 
+def _cycle_block(cycle_setting: dict | None, today: dt.date) -> dict | None:
+    """Today's cycle signal plus per-day `upcoming` facts for the plan horizon.
+
+    The generator must read `upcoming[].ease_recommended` for placement — the
+    flags are computed here so the model never does date math off
+    `next_period_date`."""
+    block = metrics.cycle_phase(cycle_setting, today)
+    if block is not None:
+        block["upcoming"] = metrics.cycle_upcoming(cycle_setting, today, days=7)
+    return block
+
+
 def build_snapshot(db: Session, user_id: int, today: dt.date) -> dict:
     """The fixed-size state snapshot the model plans from."""
     settings = get_settings(db, user_id)
@@ -557,7 +582,7 @@ def build_snapshot(db: Session, user_id: int, today: dt.date) -> dict:
         "quality_budget": quality_budget(readiness_today, acwr, phase),
         "workout_library": library_menu(phase, settings.get("coach_style") or "default"),
         "readiness_today": readiness_today,
-        "menstrual_cycle": metrics.cycle_phase(settings.get("cycle"), today),
+        "menstrual_cycle": _cycle_block(settings.get("cycle"), today),
         "active_niggles": niggles.active_niggles(db, user_id, today),
         "training_load": {
             "ctl_fitness": round(latest.ctl, 1),

@@ -11,9 +11,11 @@ Statuses mirror the `Status:` line inside each ticket; the ticket file is the so
 - [vps-migration](vps-migration/ticket.md) - move the app off the Mac onto a VPS; full runbook including secrets/backup handling.
 - [ramp-coach-evals](ramp-coach-evals/ticket.md) - layer 3-4 eval cases protecting the coach's ramp-guardrail behavior.
 - [ci-test-workflow](ci-test-workflow/ticket.md) - test-only GitHub Actions workflow (commit hygiene, not the deploy gate); needs grilling.
+- [cycle-forward-generator](cycle-forward-generator/ticket.md) - forward plan generator ignores the menstrual cycle (author mode gets no easing at all); per-day snapshot plumbing + prompt block + evals.
 
 ## Ideas (need a spec or a discussion first)
 
+- [forward-prompt-niggle-guidance](forward-prompt-niggle-guidance/ticket.md) - forward generator prompt has no run-planning niggle policy (review path has one); port the review block for week-authoring.
 - [author-mode-edit-pins](author-mode-edit-pins/ticket.md) - author mode can silently overwrite chat edits the athlete already approved; needs a source-aware guard.
 - [model-routing](model-routing/ticket.md) - per-call-site model choice on the LLM seam; route cheap passes to a smaller model.
 - [plan-day-structure](plan-day-structure/ticket.md) - opt-in "structure this run for me" on Garmin days, plus plan-day page follow-ups.

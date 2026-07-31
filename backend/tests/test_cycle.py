@@ -89,6 +89,47 @@ def test_in_drift_window_is_tight_band_around_start():
     assert phase_on(25)["in_drift_window"] is False  # day 26 (3 to go)
 
 
+def test_cycle_upcoming_covers_horizon_across_phase_boundaries():
+    # Start on day 25 (2026-06-25): the 7-day window walks luteal -> premenstrual
+    # (days 26-28) -> next cycle's early flow (days 1-2 ease, day 3 not).
+    up = metrics.cycle_upcoming(ANCHOR, dt.date(2026, 6, 25), days=7)
+    assert [u["date"] for u in up] == [
+        (dt.date(2026, 6, 25) + dt.timedelta(days=i)).isoformat() for i in range(7)
+    ]
+    assert [u["phase"] for u in up] == [
+        "luteal", "premenstrual", "premenstrual", "premenstrual",
+        "menstrual", "menstrual", "menstrual",
+    ]
+    assert [u["ease_recommended"] for u in up] == [
+        False, True, True, True, True, True, False,
+    ]
+    # Only the per-day placement facts ride along — no duplicated cycle metadata.
+    assert set(up[0]) == {"date", "phase", "ease_recommended"}
+
+
+def test_cycle_upcoming_none_when_tracking_off():
+    assert metrics.cycle_upcoming(None, dt.date(2026, 6, 1)) is None
+    assert metrics.cycle_upcoming({"enabled": False, "last_start_date": "2026-06-01"},
+                                  dt.date(2026, 6, 1)) is None
+
+
+def test_snapshot_menstrual_cycle_carries_upcoming(db, user):
+    from app.planner import build_snapshot
+    from app.settings_store import put_settings
+
+    today = dt.date(2026, 6, 25)  # day 25: window straddles the next period
+    put_settings(db, user.id, {"cycle": ANCHOR})
+    snap = build_snapshot(db, user.id, today)
+    mc = snap["menstrual_cycle"]
+    assert mc["phase"] == "luteal"
+    assert len(mc["upcoming"]) == 7
+    assert mc["upcoming"][0]["date"] == today.isoformat()
+    assert mc["upcoming"][1]["ease_recommended"] is True   # day 26, premenstrual
+
+    put_settings(db, user.id, {"cycle": {"enabled": False}})
+    assert build_snapshot(db, user.id, today)["menstrual_cycle"] is None
+
+
 def test_normalize_cycle_coerces_and_rejects():
     assert normalize_cycle(None) == {
         "enabled": False, "last_start_date": None,
