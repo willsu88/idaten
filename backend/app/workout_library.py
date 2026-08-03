@@ -18,6 +18,11 @@ from __future__ import annotations
 
 PHASES = ("base", "build", "peak", "taper")
 
+# The methodology authors the library cites. Citations are model-facing context
+# and belong in `structure` notes only — template names become athlete-facing
+# plan-day titles, so a citation in a name (or a generated title) is a leak.
+CITATIONS = ("daniels", "pfitzinger", "lydiard", "seiler")
+
 ALL = ("default", "chill", "strict")
 
 LIBRARY: list[dict] = [
@@ -58,11 +63,12 @@ LIBRARY: list[dict] = [
     },
     {
         "id": "long_fast_finish",
-        "name": "Fast-finish long run (Pfitzinger)",
+        "name": "Fast-finish long run",
         "workout_type": "long_run",
         "phases": ["build", "peak"],
         "flavors": ["default", "strict"],
-        "structure": "First 70-80% @ E, final 20-30% @ M pace (or z3). Two steps.",
+        "structure": "First 70-80% @ E, final 20-30% @ M pace (or z3). Two "
+                     "steps. (Pfitzinger's fast-finish long run.)",
     },
     {
         "id": "long_progression",
@@ -75,32 +81,35 @@ LIBRARY: list[dict] = [
     },
     {
         "id": "long_mp_segments",
-        "name": "Long run with M-pace segments (Pfitzinger)",
+        "name": "Long run with M-pace segments",
         "workout_type": "long_run",
         "phases": ["peak"],
         "flavors": ["default", "strict"],
         "structure": "E base with 2-3 x (10-15min @ M pace, 5min E float) in the "
-                     "middle. Marathon-specific; only with a primary race >= half.",
+                     "middle. Marathon-specific; only with a primary race >= half. "
+                     "(Pfitzinger's marathon-pace long run.)",
     },
     # --- threshold --------------------------------------------------------------
     {
         "id": "tempo_continuous",
-        "name": "Continuous tempo (Daniels T)",
+        "name": "Continuous tempo",
         "workout_type": "tempo",
         "phases": ["build", "peak", "taper"],
         "flavors": list(ALL),
         "structure": "WU 10-15min E + 20-40min @ T pace (z3-z4) + CD 10min E. "
-                     "Comfortably hard, controlled.",
+                     "Comfortably hard, controlled. (Daniels' classic "
+                     "continuous threshold session.)",
     },
     {
         "id": "cruise_intervals",
-        "name": "Cruise intervals (Daniels T)",
+        "name": "Cruise intervals",
         "workout_type": "tempo",
         "phases": ["build", "peak"],
         "flavors": ["default", "strict"],
         "structure": "WU 15min E + 3-5 x (1.6km or 8-10min @ T pace, 60-90s easy "
                      "jog) + CD 10min E. More T volume than continuous tempo at "
-                     "the same strain.",
+                     "the same strain. (Daniels' cruise-interval threshold "
+                     "format.)",
     },
     {
         "id": "tempo_sandwich",
@@ -114,12 +123,13 @@ LIBRARY: list[dict] = [
     # --- VO2max / intervals -----------------------------------------------------
     {
         "id": "vo2_classic",
-        "name": "VO2max intervals (Daniels I)",
+        "name": "VO2max intervals",
         "workout_type": "intervals",
         "phases": ["build", "peak"],
         "flavors": ["default", "strict"],
         "structure": "WU 15min E + 5-6 x (800-1000m or 3-4min @ I pace / z5, "
-                     "equal-time easy jog recovery) + CD 10min E.",
+                     "equal-time easy jog recovery) + CD 10min E. (Daniels' "
+                     "I-pace VO2max session.)",
     },
     {
         "id": "hill_repeats",
@@ -142,13 +152,13 @@ LIBRARY: list[dict] = [
     },
     {
         "id": "reps_speed",
-        "name": "Speed reps (Daniels R)",
+        "name": "Speed reps",
         "workout_type": "intervals",
         "phases": ["peak", "taper"],
         "flavors": ["default", "strict"],
         "structure": "WU 15min E + 8-10 x (200-400m @ R pace, full 2-3min jog "
                      "recovery) + CD 10min E. Fast but never straining; stop when "
-                     "form degrades.",
+                     "form degrades. (Daniels' R-pace repetition session.)",
     },
     {
         "id": "taper_sharpener",

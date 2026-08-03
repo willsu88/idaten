@@ -135,6 +135,29 @@ def test_check_week():
     assert any("hard time" in w for w in warns)
 
 
+def test_library_names_carry_no_methodology_citations():
+    # Template names become athlete-facing plan-day titles; citations live in
+    # the model-facing structure notes only.
+    from app.workout_library import CITATIONS
+
+    for t in LIBRARY:
+        assert not any(c in t["name"].lower() for c in CITATIONS), t["name"]
+
+
+def test_check_week_flags_citation_in_title():
+    def day(wt, minutes, title=""):
+        return {"workout_type": wt, "duration_min": minutes, "distance_km": None,
+                "title": title}
+
+    week = [day("easy_run", 50), day("tempo", 45, title="Continuous tempo, Daniels T"),
+            day("rest", None), day("long_run", 100), day("easy_run", 40),
+            day("intervals", 50), day("rest", None)]
+    warns = check_week(week, budget=2)
+    assert any("leaks methodology citation" in w and "daniels" in w for w in warns)
+    week[1]["title"] = "Continuous tempo"
+    assert check_week(week, budget=2) == []
+
+
 # --- Phase 6: steps through the plan pipeline -----------------------------------
 
 STEPS = [

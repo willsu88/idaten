@@ -921,6 +921,18 @@ def check_week(days: list[dict], budget: int,
                         f"{d.get('date')} ({d.get('workout_type')}, {where}): HR band "
                         f"{low}-{high} is not contained in the plausible zone range "
                         f"z{lo_z}-z{hi_z} for this workout type")
+
+    # Titles are athlete-facing copy: methodology citations stay in the
+    # library's model-facing structure notes, never in what the athlete reads.
+    from .workout_library import CITATIONS
+
+    for d in days:
+        title = (d.get("title") or "").lower()
+        leaked = [c for c in CITATIONS if c in title]
+        if leaked:
+            warnings.append(
+                f"{d.get('date')}: title {d.get('title')!r} leaks methodology "
+                f"citation ({', '.join(leaked)}) into athlete-facing copy")
     return warnings
 
 
