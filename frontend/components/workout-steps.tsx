@@ -1,6 +1,10 @@
 import type { StepBlock, StepKind, WorkoutStep } from "@/lib/types";
-import { STEP_KIND_LABELS, stepEndLabel, stepTargetLabel } from "@/lib/workout";
-import { formatDuration } from "@/lib/utils";
+import {
+  STEP_KIND_LABELS,
+  formatTotalDuration,
+  stepEndLabel,
+  stepTargetLabel,
+} from "@/lib/workout";
 import { cn } from "@/lib/utils";
 
 /** Left-accent color per step kind (matches the effort-profile timeline). */
@@ -58,7 +62,7 @@ export function WorkoutSteps({ steps }: { steps: StepBlock[] }) {
       {steps.map((block, i) => {
         if (block.repeat > 1) {
           const total = blockMinutes(block);
-          const totalLabel = total != null ? formatDuration(Math.round(total)) : null;
+          const totalLabel = total != null ? formatTotalDuration(total) : null;
           return (
             <div key={i} className="rounded-xl border border-border bg-muted/30 p-2.5">
               <div className="mb-2 flex items-center gap-2">

@@ -1,6 +1,5 @@
 import type { StepBlock, StepKind } from "@/lib/types";
-import { formatDuration } from "@/lib/utils";
-import { STEP_KIND_LABELS, workoutBreakdown } from "@/lib/workout";
+import { STEP_KIND_LABELS, formatTotalDuration, workoutBreakdown } from "@/lib/workout";
 import { cn } from "@/lib/utils";
 
 /** Bar fill per step kind — matches the WorkoutSteps dot palette. */
@@ -11,10 +10,6 @@ const STEP_FILL_CLASSES: Record<StepKind, string> = {
   cooldown: "bg-indigo-500",
   rest: "bg-muted-foreground/30",
 };
-
-function roundMin(min: number): string {
-  return formatDuration(Math.round(min)) ?? `${Math.round(min)} min`;
-}
 
 /**
  * Effort-profile timeline for a structured workout: a horizontal proportional
@@ -49,7 +44,7 @@ export function WorkoutTimeline({
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold">Effort profile</p>
         <p className="text-sm font-medium tabular-nums text-muted-foreground">
-          {roundMin(bd.totalMin)} total
+          {formatTotalDuration(bd.totalMin)} total
         </p>
       </div>
 
@@ -59,7 +54,7 @@ export function WorkoutTimeline({
             key={i}
             className={cn("h-full min-w-[2px]", STEP_FILL_CLASSES[seg.kind])}
             style={{ width: `${(seg.min / bd.totalMin) * 100}%` }}
-            title={`${STEP_KIND_LABELS[seg.kind]} · ${roundMin(seg.min)}${
+            title={`${STEP_KIND_LABELS[seg.kind]} · ${formatTotalDuration(seg.min)}${
               seg.approximate ? " (approx)" : ""
             }`}
           />
@@ -71,7 +66,7 @@ export function WorkoutTimeline({
           <span key={t.kind} className="inline-flex items-center gap-1.5 text-xs tabular-nums">
             <span className={cn("h-2 w-2 rounded-full", STEP_FILL_CLASSES[t.kind])} />
             <span className="font-medium">{t.label}</span>
-            <span className="text-muted-foreground">{roundMin(t.min)}</span>
+            <span className="text-muted-foreground">{formatTotalDuration(t.min)}</span>
           </span>
         ))}
       </div>

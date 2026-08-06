@@ -1,4 +1,5 @@
 import type { HrZones, PlanDay, ReadinessLevel, StepBlock, StepKind, WorkoutStep, WorkoutType } from "./types";
+import { formatDuration } from "./utils";
 
 export type ZoneKey = "z1" | "z2" | "z3" | "z4" | "z5";
 
@@ -99,6 +100,28 @@ export function stepTargetLabel(step: WorkoutStep): string | null {
   return null;
 }
 
+/**
+ * A prescribed step duration (float minutes) in the unit a coach would say it
+ * in: seconds under two minutes ("20 s" beats "0.3 min" for a stride), whole
+ * minutes when it lands on one, else m:ss. `compact` is the week-view variant.
+ */
+export function formatStepDuration(min: number, compact = false): string {
+  const s = Math.round(min * 60);
+  if (s < 120) return compact ? `${s}s` : `${s} s`;
+  if (s % 60 === 0) return compact ? `${s / 60}'` : `${s / 60} min`;
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/**
+ * A derived total (summed across steps) — whole minutes, since the parts are
+ * estimates anyway, except under two minutes where rounding would print an
+ * uninformative "1 min" (or "0 min") for a set of short reps.
+ */
+export function formatTotalDuration(min: number): string {
+  if (min < 2) return formatStepDuration(min);
+  return formatDuration(Math.round(min)) ?? `${Math.round(min)} min`;
+}
+
 /** End-condition chip for a workout step: "800 m" / "5 km" / "12 min". */
 export function stepEndLabel(step: WorkoutStep): string | null {
   if (step.distance_km != null) {
@@ -106,7 +129,7 @@ export function stepEndLabel(step: WorkoutStep): string | null {
       ? `${Math.round(step.distance_km * 1000)} m`
       : `${Number(step.distance_km.toFixed(2))} km`;
   }
-  if (step.duration_min != null) return `${Number(step.duration_min.toFixed(1))} min`;
+  if (step.duration_min != null) return formatStepDuration(step.duration_min);
   return null;
 }
 
@@ -124,7 +147,7 @@ function compactEnd(step: WorkoutStep): string | null {
       ? `${Math.round(step.distance_km * 1000)}m`
       : `${Number(step.distance_km.toFixed(2))}km`;
   }
-  if (step.duration_min != null) return `${Number(step.duration_min.toFixed(1))}'`;
+  if (step.duration_min != null) return formatStepDuration(step.duration_min, true);
   return null;
 }
 
