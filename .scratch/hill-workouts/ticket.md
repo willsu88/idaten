@@ -35,7 +35,6 @@ The hill cue is the workout-level description plus the in-app step note, both re
 
 ## Open follow-ups
 
-1. No eval case covers hill programming yet. Layers 3-4 should check that the coach picks `hill_repeats` only when `athlete.running_environment` says a hill exists, and that it never writes an uphill step with a pace target (the deterministic guard catches the second, but an eval would catch the model regressing upstream of it).
-2. `hill_check` is computed at enrichment only. A run enriched before this shipped has `hill_check` null forever; scores are never recomputed (ADR 0018), and it is not obvious whether terrain should follow that rule or be backfillable.
-3. The chat edit path drops a pace target from an uphill step mechanically (`_drop_uphill_pace`), but its tool description still says nothing about terrain, so an edited hill day can lose the uphill marker entirely - and then nothing knows it was a hill session.
-4. Downhill work is representable but never prescribed - no template uses it beyond the jog-down.
+1. `hill_check` is computed at enrichment only. A run enriched before this shipped has `hill_check` null forever; scores are never recomputed (ADR 0018), and it is not obvious whether terrain should follow that rule or be backfillable.
+2. Downhill work is representable but never prescribed - no template uses it beyond the jog-down.
+3. The break-test showed the model reaches for the athlete's literal hill length (`distance_km: 0.2` for a stated 200m hill) when the prompt does not insist on timing the rep. That is a sensible instinct fighting the ADR 0021 rule, and it only holds because the prompt says so. If it keeps resurfacing, revisit whether a known hill length should be allowed to make a rep distance-based.

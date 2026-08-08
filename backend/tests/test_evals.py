@@ -495,3 +495,112 @@ def test_analysis_names_the_swap_and_never_scolds_the_wrong_plan(db, user):
         "too hard for an easy run or grade them against the easier plan.",
         analysis,
     )
+
+
+# --- hill sessions (ADR 0021) --------------------------------------------------
+#
+# Two model decisions no deterministic guard can own: whether to program hills at
+# all (it depends on prose the athlete wrote), and whether the steps that come
+# back are marked uphill. The pace-target rule IS code-owned
+# (planner.terrain_target_violations), so it is asserted here only end-to-end -
+# what these cases protect is the model reaching the guard already correct, and
+# the retry converging when it does not.
+
+def _uphill_steps(day: dict | object) -> list[dict]:
+    """Every uphill step of a plan day, whether it is a PlanDay row or the dict
+    shape the chat edit tool proposes."""
+    blocks = day.get("steps") if isinstance(day, dict) else day.steps
+    return [s for b in (blocks or []) for s in (b.get("steps") or [])
+            if s.get("terrain") == "uphill"]
+
+
+@requires_real_key
+def test_generator_does_not_program_hills_for_an_athlete_with_no_hill(db, user):
+    """A hill session needs a hill. The library offers hill_repeats in base
+    phase, so nothing but the athlete's own running_environment stops the model
+    prescribing a session they physically cannot run."""
+    from app.models import PlanDay
+    from app.settings_store import get_settings, put_settings
+
+    seed_world(db, user.id)
+    _seed_planner_profile(db, user.id)
+    athlete = dict(get_settings(db, user.id)["athlete"])
+    athlete["running_environment"] = (
+        "I run a completely flat loop around the city park. There are no hills "
+        "anywhere near me and I have no access to a track or a treadmill."
+    )
+    put_settings(db, user.id, {"athlete": athlete})
+
+    days = _generated_week(db, user.id)
+    assert len(days) >= 6, "generator should still write a full week"
+    assert any(d.workout_type != "rest" for d in days), "week is all rest"
+
+    offenders = [(d.date.isoformat(), d.title) for d in days if _uphill_steps(d)]
+    assert not offenders, f"prescribed hills to an athlete with no hill: {offenders}"
+
+
+@requires_real_key
+def test_generated_hill_work_never_carries_a_pace_target(db, user):
+    """End-to-end on the guard + corrective retry: whatever the model writes for
+    an athlete who HAS a hill, no uphill step reaches storage with a pace band.
+    Vacuous if the model programs no hills that week - which is a legal outcome,
+    so the case asserts the invariant rather than the presence of hills."""
+    from app.planner import terrain_target_violations
+    from app.settings_store import get_settings, put_settings
+
+    seed_world(db, user.id)
+    _seed_planner_profile(db, user.id)
+    athlete = dict(get_settings(db, user.id)["athlete"])
+    athlete["running_environment"] = (
+        "There is a steady hill about 200m long at maybe 6% two streets from my "
+        "front door, and I run trails at the weekend."
+    )
+    put_settings(db, user.id, {"athlete": athlete})
+    # hybrid is the default and the trap: quality days take pace, and a hill
+    # session is a quality day.
+    assert get_settings(db, user.id)["training_mode"] == "hybrid"
+
+    days = _generated_week(db, user.id)
+    dicts = [{"date": d.date.isoformat(), "workout_type": d.workout_type,
+              "steps": d.steps} for d in days]
+    assert terrain_target_violations(dicts) == []
+    for d in days:
+        for s in _uphill_steps(d):
+            assert s.get("target_hr_low") and s.get("target_hr_high"), \
+                f"uphill step on {d.date} has no HR band: {s}"
+            assert not s.get("distance_km"), \
+                f"uphill rep on {d.date} is distance-based, not timed: {s}"
+
+
+@requires_real_key
+def test_chat_prescribes_a_requested_hill_session_by_effort(world, db, user):
+    """The chat edit path has no corrective retry - only a mechanical clamp - so
+    the model has to get this right itself. Asked for hills by an athlete who has
+    one, the proposed work steps must be marked uphill and targeted by HR."""
+    from app.settings_store import get_settings, put_settings
+
+    _seed_planner_profile(db, user.id)
+    athlete = dict(get_settings(db, user.id)["athlete"])
+    athlete["running_environment"] = (
+        "Steep hill about 200m long right by my house, roughly 6%."
+    )
+    put_settings(db, user.id, {"athlete": athlete})
+
+    run, calls = world
+    reply = run("Can you put a hill repeat session on my plan this week? "
+                "I've got a good hill by the house.")
+
+    proposals = called(calls, "propose_plan_edit")
+    assert proposals, f"expected propose_plan_edit; got {[n for n, _ in calls]}"
+    proposed = [d for p in proposals for d in (p.get("days") or [])]
+    uphill = [s for d in proposed for s in _uphill_steps(d)]
+    assert uphill, (
+        "the hill session's work steps were never marked terrain=uphill, so "
+        f"nothing downstream knows it is a hill session: {proposed}")
+    for s in uphill:
+        assert not s.get("target_pace"), f"uphill step carries a pace target: {s}"
+        assert s.get("target_hr_low") and s.get("target_hr_high"), \
+            f"uphill step has no HR band: {s}"
+        assert s.get("duration_min") and not s.get("distance_km"), \
+            f"uphill rep must be timed, not a distance: {s}"
+    assert reply.strip(), "expected the coach to say something about the session"

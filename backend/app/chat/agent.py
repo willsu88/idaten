@@ -124,6 +124,14 @@ Rules:
   repeat blocks for interval sets, e.g. 6 x [800m work, 400m float]). When you
   propose a tempo/interval/long session, include concrete steps consistent with the
   day-level summary and the athlete's training mode; simple easy/rest days use null.
+- Every step carries `terrain`. A hill session's work steps are "uphill" and the
+  jog back down is "downhill"; everything else is "flat". An uphill step ALWAYS
+  takes an HR band with target_pace null, whatever the training mode: uphill pace
+  is the gradient, not the effort, so a flat-ground band is unreachable on a
+  climb. Time an uphill repetition (duration_min), never a distance, and give the
+  jog back down neither duration_min nor distance_km - that is a lap-button step,
+  so it fits whatever hill they have. Check the athlete's running_environment
+  before proposing hills at all: a hill session needs a hill.
 - Every pace you prescribe or discuss must be grounded in the athlete's actual
   recent paces above and their race goal pace — never in generic tables. Easy
   runs go at or SLOWER than their typical pace; quality work progresses gradually
