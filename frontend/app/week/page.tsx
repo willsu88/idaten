@@ -135,12 +135,21 @@ function DayRow({
         <Link href={href} aria-label={`Open ${day.title}`} className="absolute inset-0 z-10" />
       )}
 
-      {/* Collapsed row — fixed date + badge columns so titles align. */}
+      {/* Collapsed row — fixed date + badge columns so titles align.
+          `min-w-0` on the row is load-bearing: without it the row's automatic
+          minimum size is its max-content size, the title column never gets to
+          shrink, `truncate` never fires, and the overflow is silently eaten by
+          the Card's overflow-hidden, taking the chevron with it. */}
       <div className="flex items-stretch">
         <div
           className={cn("w-1 shrink-0", isDone ? "bg-success" : WORKOUT_BAR_CLASSES[day.workout_type])}
         />
-        <div className={cn("flex flex-1 items-center gap-2.5 px-3 py-2", isRest && "opacity-70")}>
+        <div
+          className={cn(
+            "flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2",
+            isRest && "opacity-70",
+          )}
+        >
           <div className="w-10 shrink-0 leading-tight">
             <p className="text-xs font-semibold">{wd}</p>
             {isToday ? (
@@ -149,7 +158,10 @@ function DayRow({
               <p className="text-[10px] text-muted-foreground">{md}</p>
             )}
           </div>
-          <div className="w-24 shrink-0">
+          {/* The type badge costs 96px of a ~355px phone row to say what the
+              colored bar and usually the title already say, so below `sm` it
+              yields to the title and reappears in the expanded panel. */}
+          <div className="hidden w-24 shrink-0 sm:block">
             <Badge className={WORKOUT_BADGE_CLASSES[day.workout_type]}>
               {WORKOUT_LABELS[day.workout_type]}
             </Badge>
@@ -216,6 +228,12 @@ function DayRow({
           only tinted surface, so the card stays one background). */}
       {expanded && (
         <div className="relative z-20 space-y-3 px-4 pb-3 pt-1">
+          {/* The type badge the collapsed row drops on a phone. */}
+          <div className="sm:hidden">
+            <Badge className={WORKOUT_BADGE_CLASSES[day.workout_type]}>
+              {WORKOUT_LABELS[day.workout_type]}
+            </Badge>
+          </div>
           {hasChips && (
             <div className="flex flex-wrap items-center gap-2">
               <CyclePhaseChip cycle={day.cycle} />
