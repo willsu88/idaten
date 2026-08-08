@@ -41,7 +41,9 @@ STEP_SCHEMA: dict = {
         "duration_min": {"type": ["number", "null"]},
         "distance_km": {"type": ["number", "null"],
                         "description": "Set duration OR distance, not both."},
-        "target_pace": {"type": ["string", "null"], "description": "M:SS min/km"},
+        "target_pace": {"type": ["string", "null"],
+                        "description": "min/km, either 'M:SS' or the band 'M:SS-M:SS' "
+                                       "(slower-faster). No units, no words."},
         "target_hr_low": {"type": ["integer", "null"], "description": "bpm"},
         "target_hr_high": {"type": ["integer", "null"]},
         "note": {"type": "string", "description": "Short execution cue, e.g. 'controlled, not all-out'. Empty string if none."},
@@ -89,7 +91,9 @@ PLAN_SCHEMA: dict = {
                     "distance_km": {"type": ["number", "null"]},
                     "target_pace": {
                         "type": ["string", "null"],
-                        "description": "min/km as M:SS, e.g. 5:30. Null for rest/cross-train.",
+                        "description": "min/km, either 'M:SS' (e.g. 5:30) or the band "
+                                       "'M:SS-M:SS' slower-faster (e.g. 6:50-7:05). No "
+                                       "units, no words. Null for rest/cross-train.",
                     },
                     "target_hr_low": {
                         "type": ["integer", "null"],
@@ -203,6 +207,10 @@ bpm bands anchored on their lactate threshold HR):
 - "hybrid": HR bands for easy/recovery/long runs (target_pace null), pace for
   tempo/intervals/race (HR null). One target type per day, never both.
 If hr_zones is null (no LTHR yet), fall back to pace targets in every mode.
+Every target_pace is written as "M:SS" or as the band "M:SS-M:SS" (slower first,
+faster second), never with units, words, or a "~". A band is preferred when the
+target came from a training_paces range: it is what the watch and the execution
+score both use.
 
 Structured workouts (the `steps` field) and variety:
 - Build every quality session (tempo, intervals) and every non-trivial long run
@@ -799,16 +807,45 @@ QUALITY_TYPES = {"tempo", "intervals", "race"}
 EASY_TYPES = {"easy_run", "recovery", "long_run"}
 
 
-def pace_violations(days: list[dict], profile: dict | None) -> list[str]:
-    """Deterministic guard: prescribed day-level paces must stay anchored to
-    the athlete's observed paces. Easy-type days may not be more than ~7%
-    faster than the typical recent whole-run pace; quality days may not be
-    more than ~10% faster than the fastest recent whole-run average (interval
-    WORK steps legitimately go faster, so only day-level targets are checked).
+def _iter_paces(d: dict):
+    """Every pace a day prescribes: (pace, where) for the day-level target and
+    every step in every block."""
+    yield d.get("target_pace"), "day"
+    for block in d.get("steps") or []:
+        for s in block.get("steps") or []:
+            yield s.get("target_pace"), f"step {s.get('kind') or 'work'}"
+
+
+def pace_format_violations(days: list[dict]) -> list[str]:
+    """Deterministic guard: a prescribed pace is 'M:SS' or the band 'M:SS-M:SS'.
+
+    Anything else reads as None everywhere downstream, which is silent damage
+    rather than an error - the step reaches the watch with no target and drops
+    out of the execution score. Needs no pace profile, so it runs even for a
+    brand-new athlete.
     """
-    if not profile:
-        return []
     out: list[str] = []
+    for d in days:
+        for pace, where in _iter_paces(d):
+            if not metrics.pace_is_well_formed(pace):
+                out.append(
+                    f"{d.get('date')} ({d.get('workout_type')}, {where}): target_pace "
+                    f"{pace!r} is not a pace - use 'M:SS' or the band 'M:SS-M:SS' "
+                    "min/km, with no units or words")
+    return out
+
+
+def pace_violations(days: list[dict], profile: dict | None) -> list[str]:
+    """Deterministic guard: prescribed paces must be readable, and day-level
+    paces must stay anchored to the athlete's observed paces. Easy-type days
+    may not be more than ~7% faster than the typical recent whole-run pace;
+    quality days may not be more than ~10% faster than the fastest recent
+    whole-run average (interval WORK steps legitimately go faster, so only
+    day-level targets are grounding-checked).
+    """
+    out: list[str] = pace_format_violations(days)
+    if not profile:
+        return out
     typical = profile["typical_pace_s"]
     fastest = profile["fastest_avg_pace_s"]
     for d in days:
@@ -969,9 +1006,11 @@ def generate_plan(db: Session, user_id: int, source: str = "daily_job") -> list[
             messages=messages + [
                 {"role": "assistant", "content": json.dumps(result)},
                 {"role": "user", "content":
-                    "These target paces are not grounded in the athlete's actual "
-                    "recent paces (recent_pace_profile):\n- " + "\n- ".join(violations)
-                    + "\nRevise the plan so every pace respects the grounding rules."},
+                    "These target paces are unusable - either malformed, or not "
+                    "grounded in the athlete's actual recent paces "
+                    "(recent_pace_profile):\n- " + "\n- ".join(violations)
+                    + "\nRevise the plan so every pace is well formed and respects "
+                    "the grounding rules."},
             ],
             schema=PLAN_SCHEMA,
             name="training_plan",
@@ -1371,8 +1410,10 @@ def create_pending_edit(
             "error": "proposal rejected by the pace guard",
             "violations": violations,
             "recent_pace_profile": profile,
-            "note": "Re-propose with paces grounded in the athlete's actual "
-                    "recent paces (easy days at or slower than typical_pace).",
+            "note": "Re-propose with paces that are well formed ('M:SS' or the "
+                    "band 'M:SS-M:SS' min/km, no units or words) and grounded in "
+                    "the athlete's actual recent paces (easy days at or slower "
+                    "than typical_pace).",
         }
     # HR band clamp (ADR 0017): a degenerate band is widened to the athlete's
     # zone band - the same band the mirror rule produces - rather than rejected.

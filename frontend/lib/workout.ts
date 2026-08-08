@@ -183,15 +183,19 @@ export function compactStepsSummary(steps: StepBlock[]): string {
 
 // --- Effort-profile timeline (plan preview page) ---
 
-/** Parse a "M:SS" min/km pace into minutes-per-km; null if unparseable. */
+/** A prescribed pace is "M:SS" or the band "M:SS-M:SS"; a band reads as its
+ * midpoint, matching how the backend anchors one. */
 function paceToMinPerKm(pace: string | null): number | null {
   if (!pace) return null;
-  const m = /^(\d+):(\d{1,2})$/.exec(pace.trim());
-  if (!m) return null;
-  const min = Number(m[1]);
-  const sec = Number(m[2]);
-  if (Number.isNaN(min) || Number.isNaN(sec)) return null;
-  return min + sec / 60;
+  const parts = pace.trim().split("-");
+  if (parts.length > 2) return null;
+  const mins: number[] = [];
+  for (const part of parts) {
+    const m = /^(\d+):([0-5]\d)$/.exec(part.trim());
+    if (!m) return null;
+    mins.push(Number(m[1]) + Number(m[2]) / 60);
+  }
+  return mins.reduce((a, b) => a + b, 0) / mins.length;
 }
 
 // Nominal easy pace (min/km) used only to give a distance-only step SOME width

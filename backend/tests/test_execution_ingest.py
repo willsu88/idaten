@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from app import execution
+from app import execution, metrics
 from app.models import Activity, PlanDay, PlanVersion
 
 TODAY = dt.date(2026, 7, 16)
@@ -254,3 +254,25 @@ def test_idaten_segments_structured_repeat(db, user):
     segs = execution._idaten_segments(day, ZONES)
     assert len(segs) == 4                         # 1 warmup + 3 repeated work reps
     assert segs[1]["low"] == 173 and segs[1]["duration_s"] == 240
+
+
+def test_idaten_segments_score_pace_range_work_steps(db, user):
+    """The work steps of a paced session must be scored. A prescribed range
+    used to fail the parser, so the whole quality block vanished from the
+    breakdown and the athlete was graded only on the easy floats between reps."""
+    day = PlanDay(user_id=user.id, date=TODAY, workout_type="tempo",
+                  title="Controlled threshold run", steps=[
+                      {"repeat": 1, "steps": [
+                          {"kind": "warmup", "duration_min": 10,
+                           "target_hr_low": 138, "target_hr_high": 152},
+                          {"kind": "work", "duration_min": 6,
+                           "target_pace": "6:50-7:05"},
+                          {"kind": "recovery", "duration_min": 3,
+                           "target_hr_low": 138, "target_hr_high": 152},
+                      ]},
+                  ])
+    segs = execution._idaten_segments(day, ZONES)
+    assert [s["label"] for s in segs] == ["warmup", "work", "recovery"]
+    work = segs[1]
+    assert work["axis"] == "pace" and work["duration_s"] == 360
+    assert (work["low"], work["high"]) == metrics.pace_band_mps("6:50-7:05")

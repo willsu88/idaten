@@ -30,7 +30,7 @@ export interface WorkoutStep {
   kind: StepKind;
   duration_min: number | null; // exactly one of duration/distance normally set
   distance_km: number | null;
-  target_pace: string | null; // "M:SS" min/km
+  target_pace: string | null; // "M:SS" or the band "M:SS-M:SS" min/km
   target_hr_low: number | null; // bpm band (per training mode; never both pace+HR)
   target_hr_high: number | null;
   note: string; // short cue, e.g. "controlled, not all-out"
@@ -72,7 +72,7 @@ export interface PlanDay {
   description: string;
   duration_min: number | null;
   distance_km: number | null;
-  target_pace: string | null; // "5:30" min/km
+  target_pace: string | null; // "5:30" or the band "6:50-7:05" min/km
   target_hr_low: number | null; // bpm (HR-band target; pace OR band, never both)
   target_hr_high: number | null; // bpm
   rationale: string;

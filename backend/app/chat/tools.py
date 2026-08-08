@@ -161,7 +161,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                                 "description": {"type": "string"},
                                 "duration_min": {"type": ["number", "null"]},
                                 "distance_km": {"type": ["number", "null"]},
-                                "target_pace": {"type": ["string", "null"]},
+                                "target_pace": {"type": ["string", "null"], "description": "min/km as 'M:SS' or the band 'M:SS-M:SS' (slower-faster); no units or words"},
                                 "target_hr_low": {"type": ["integer", "null"], "description": "HR band lower bound (bpm); use per the athlete's training mode — never set both pace and HR"},
                                 "target_hr_high": {"type": ["integer", "null"]},
                                 "steps": STEPS_SCHEMA,

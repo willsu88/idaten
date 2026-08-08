@@ -2,7 +2,13 @@
 // display layer picks the unit a coach would say out loud.
 
 import { describe, expect, it } from "vitest";
-import { compactStepsSummary, formatStepDuration, formatTotalDuration, stepEndLabel } from "./workout";
+import {
+  compactStepsSummary,
+  formatStepDuration,
+  formatTotalDuration,
+  stepEndLabel,
+  workoutBreakdown,
+} from "./workout";
 import type { StepBlock, WorkoutStep } from "./types";
 
 const step = (over: Partial<WorkoutStep> = {}): WorkoutStep => ({
@@ -91,5 +97,29 @@ describe("compactStepsSummary", () => {
       },
     ];
     expect(compactStepsSummary(blocks)).toBe("WU 24' · 4×(20s + 75s)");
+  });
+});
+
+describe("workoutBreakdown", () => {
+  // A target pace may be a band ("6:50-7:05"). Reading only the single-pace
+  // form silently fell back to the nominal 6:00/km and drew the segment at the
+  // wrong width, flagged "approximate" for a step we can size exactly.
+  it("sizes a distance step from a prescribed pace band", () => {
+    const blocks: StepBlock[] = [
+      { repeat: 1, steps: [step({ distance_km: 2, target_pace: "6:50-7:10" })] },
+    ];
+    const { segments } = workoutBreakdown(blocks, null);
+    expect(segments).toHaveLength(1);
+    // Midpoint 7:00/km over 2 km = 14 min
+    expect(segments[0].min).toBeCloseTo(14, 6);
+    expect(segments[0].approximate).toBe(false);
+  });
+
+  it("still falls back when the pace is unreadable", () => {
+    const blocks: StepBlock[] = [
+      { repeat: 1, steps: [step({ distance_km: 2, target_pace: "sub 7:00" })] },
+    ];
+    const { segments } = workoutBreakdown(blocks, null);
+    expect(segments[0].approximate).toBe(true);
   });
 });

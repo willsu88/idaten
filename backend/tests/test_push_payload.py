@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import datetime as dt
 
-from app.garmin.push import PACE_BAND_MPS, PUSHABLE_TYPES, _workout_payload, push_day
-from app.metrics import pace_to_mps
+from app.garmin.push import PUSHABLE_TYPES, _workout_payload, push_day
+from app.metrics import PACE_BAND_MPS, pace_to_mps
 from app.models import PlanDay
 
 TODAY = dt.date.today()
@@ -43,6 +43,15 @@ def test_pace_target_band():
     assert step["targetType"]["workoutTargetTypeKey"] == "pace.zone"
     assert abs(step["targetValueOne"] - (mps - PACE_BAND_MPS)) < 1e-9
     assert abs(step["targetValueTwo"] - (mps + PACE_BAND_MPS)) < 1e-9
+
+
+def test_prescribed_pace_range_reaches_the_watch():
+    """A range is a pace target, not a parse failure. It used to fall through
+    to no.target, which is why a paced workout showed no target on the watch."""
+    step = _step(_workout_payload(_day(distance_km=10, target_pace="6:50-7:05")))
+    assert step["targetType"]["workoutTargetTypeKey"] == "pace.zone"
+    assert abs(step["targetValueOne"] - pace_to_mps("7:05")) < 1e-9
+    assert abs(step["targetValueTwo"] - pace_to_mps("6:50")) < 1e-9
 
 
 def test_no_pace_means_no_target():

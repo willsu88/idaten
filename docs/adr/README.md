@@ -22,3 +22,4 @@ Each records the context, the options weighed, and why the chosen one won - so t
 - [0017](0017-hr-targets-are-resolved-zone-bands.md) - HR targets are stored as resolved zone bands, never point values
 - [0018](0018-scores-pinned-to-executed-prescription.md) - An execution score is pinned to the prescription the run actually executed
 - [0019](0019-judge-grades-persisted-context-snapshot.md) - The QA judge grades a persisted snapshot of the context the coach actually saw
+- [0020](0020-pace-targets-are-bands.md) - A prescribed pace is a band, parsed in exactly one place

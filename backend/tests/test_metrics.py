@@ -41,6 +41,45 @@ def test_pace_to_mps_roundtrip():
     assert metrics.pace_to_mps(None) is None
 
 
+def test_pace_seconds_takes_a_range_midpoint():
+    assert metrics.pace_seconds("6:50") == 410
+    # "6:50-7:10" -> (410 + 430) / 2
+    assert metrics.pace_seconds("6:50-7:10") == 420
+    assert metrics.pace_seconds("sub 7:00") is None
+    assert metrics.pace_seconds(None) is None
+
+
+def test_pace_band_mps_synthesizes_a_band_around_a_single_pace():
+    band = metrics.pace_band_mps("5:30")
+    mps = metrics.pace_to_mps("5:30")
+    assert band == (mps - metrics.PACE_BAND_MPS, mps + metrics.PACE_BAND_MPS)
+
+
+def test_pace_band_mps_uses_the_real_endpoints_of_a_range():
+    """A prescribed pace IS a band; when the plan gives us one, honour it
+    instead of fabricating +/- PACE_BAND_MPS around a midpoint."""
+    low, high = metrics.pace_band_mps("6:50-7:05")
+    # Slower pace = lower speed, so the 7:05 end is the low bound.
+    assert abs(low - metrics.pace_to_mps("7:05")) < 1e-9
+    assert abs(high - metrics.pace_to_mps("6:50")) < 1e-9
+    # Written the other way round, it still comes back ordered.
+    assert metrics.pace_band_mps("7:05-6:50") == (low, high)
+
+
+def test_pace_band_mps_rejects_what_it_cannot_parse():
+    for bad in ("garbage", "6:50 min/km", "sub 7:00", "6:50-", "", None):
+        assert metrics.pace_band_mps(bad) is None
+
+
+def test_pace_is_well_formed():
+    assert metrics.pace_is_well_formed("5:30")
+    assert metrics.pace_is_well_formed("6:50-7:05")
+    assert not metrics.pace_is_well_formed("6:50 min/km")
+    assert not metrics.pace_is_well_formed("sub 7:00")
+    # An absent pace is not malformed - it just isn't a pace target.
+    assert metrics.pace_is_well_formed(None)
+
+
 # --- efficiency factor ----------------------------------------------------------
 
 def test_efficiency_factor():

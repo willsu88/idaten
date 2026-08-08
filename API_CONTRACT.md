@@ -30,7 +30,7 @@ interface PlanDay {
   description: string;        // how to execute the workout
   duration_min: number | null;
   distance_km: number | null;
-  target_pace: string | null; // "5:30" min/km
+  target_pace: string | null; // "5:30" or the band "6:50-7:05" min/km (v1.40)
   rationale: string;          // WHY this workout / why it changed
   status: "planned" | "completed" | "skipped";
   garmin_workout_id: string | null;
@@ -648,7 +648,7 @@ interface WorkoutStep {
   kind: StepKind;
   duration_min: number | null;   // exactly one of duration/distance normally set
   distance_km: number | null;
-  target_pace: string | null;    // "M:SS" min/km
+  target_pace: string | null;    // "M:SS" or the band "M:SS-M:SS" min/km (v1.40)
   target_hr_low: number | null;  // bpm band (per training mode; never both pace+HR)
   target_hr_high: number | null;
   note: string;                  // short cue, e.g. "controlled, not all-out"
@@ -1760,3 +1760,16 @@ When a coach run's workout name resolves to the original Garmin workout rather t
 
 - The execution-score block (activity detail and Today) shows a notice above the coach note when `plan_mismatch` is set: the athlete ran the original workout, and the score judges the workout actually run.
 - The coach's execution analysis names the swap instead of grading the run against the plan the athlete didn't follow (backend prompt change; no new fields).
+
+## v1.40 - a prescribed pace may be a band (ADR 0020)
+
+`target_pace` - day-level and on every `WorkoutStep` - now holds either a single pace `"M:SS"` or a band `"M:SS-M:SS"` in min/km, slower bound first.
+No field is added or removed and no existing value changes shape; the set of legal values widens.
+
+A band is what the athlete's own training paces are, and it is what the watch and the execution score both consume, so the plan no longer has to flatten one into a single number.
+Anything that is not one of those two forms is rejected when the plan is written, so a client never has to render a pace it cannot parse.
+
+### UI
+
+- Any client parsing `target_pace` must accept the band form. Rendering it verbatim (`6:50-7:05 /km`) was already correct; arithmetic on it should use the midpoint.
+  In this repo `lib/workout.ts` `paceToMinPerKm` does exactly that - it previously fell back to a nominal 6:00/km, sizing distance-based timeline segments wrongly.

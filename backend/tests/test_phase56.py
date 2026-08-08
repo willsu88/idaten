@@ -229,6 +229,10 @@ def test_multistep_push_payload(db, user):
 
     assert cd["stepType"]["stepTypeKey"] == "cooldown"
 
+    # Step notes stay in the app: Garmin renders a step description as a notes
+    # screen the athlete has to page past mid-interval.
+    assert all("description" not in s for s in (wu, work, rec, cd))
+
     # stepOrder is globally sequential, containers included
     orders = [wu["stepOrder"], group["stepOrder"], work["stepOrder"],
               rec["stepOrder"], cd["stepOrder"]]

@@ -81,6 +81,32 @@ def test_pace_violations_none_without_profile():
     assert pace_violations(days, None) == []
 
 
+def test_pace_violations_allow_a_prescribed_band():
+    """A pace target may be a band - the athlete's training_paces are bands."""
+    days = [{"date": "2026-07-21", "workout_type": "tempo", "target_pace": "6:50-7:05",
+             "steps": [{"repeat": 3, "steps": [{"kind": "work",
+                                                "target_pace": "6:50-7:05"}]}]}]
+    assert pace_violations(days, PROFILE) == []
+
+
+def test_pace_violations_flag_a_pace_nothing_can_parse():
+    """Format is checked with no profile at all: an unreadable pace silently
+    became a no-target step on the watch and vanished from the score."""
+    days = [{"date": "2026-07-21", "workout_type": "tempo", "target_pace": "sub 7:00"}]
+    assert len(pace_violations(days, None)) == 1
+    assert len(pace_violations(days, PROFILE)) == 1
+
+
+def test_pace_violations_reach_into_steps():
+    days = [{"date": "2026-07-21", "workout_type": "tempo", "target_pace": None,
+             "steps": [{"repeat": 3, "steps": [
+                 {"kind": "work", "target_pace": "6:50 min/km"},
+                 {"kind": "recovery", "target_pace": None},
+             ]}]}]
+    violations = pace_violations(days, PROFILE)
+    assert len(violations) == 1 and "step work" in violations[0]
+
+
 def test_propose_plan_edit_rejected_by_pace_guard(db):
     from app.chat.tools import dispatch
 

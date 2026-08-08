@@ -63,6 +63,11 @@ The bpm range a plan day or workout step prescribes, anchored on the athlete's H
 A band is always a real range: a zero-width band (low equal to high) is invalid data, never a "tight target".
 Distinct from HR zones: the zones are the athlete's physiology map, the band is one workout's prescription drawn from it.
 
+### Pace target band
+The min/km corridor a plan day or workout step prescribes, written as `"M:SS"` or as the band `"M:SS-M:SS"` (slower bound first).
+Like an HR target band it is always a corridor, not a point: a single `"M:SS"` is widened by a fixed margin before it reaches the watch or the execution score (ADR 0020).
+The two forms differ only in whether the coach's own bounds were kept; anything that is neither form is rejected when the plan is written, never silently read as "no target".
+
 ### Plan mode
 Whether Idaten edits or writes the training week: `editor` means an active Garmin Coach plan is the base and Idaten produces diffs against it; `author` means Idaten writes the week itself.
 Editor is automatic whenever a Garmin plan is active; a member can force author in Settings.

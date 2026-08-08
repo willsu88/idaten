@@ -8,13 +8,17 @@ The planner and chat agent consume these as facts.
 from __future__ import annotations
 
 import datetime as dt
+import logging
 import math
+import re
 from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .models import Activity, DailyHealth, DayIntent
+
+log = logging.getLogger(__name__)
 
 CTL_DAYS = 42.0  # chronic (fitness) time constant
 ATL_DAYS = 7.0   # acute (fatigue) time constant
@@ -579,7 +583,7 @@ def pace_str(speed_mps: float | None) -> str | None:
 
 
 def pace_to_mps(pace: str) -> float | None:
-    """'M:SS' min/km -> m/s."""
+    """'M:SS' min/km -> m/s. A range is not a single pace - use pace_band_mps."""
     try:
         m, s = pace.strip().split(":")
         sec = int(m) * 60 + int(s)
@@ -588,13 +592,58 @@ def pace_to_mps(pace: str) -> float | None:
         return None
 
 
-def pace_seconds(pace: str | None) -> int | None:
-    """'M:SS' min/km -> seconds per km."""
-    try:
-        m, s = pace.strip().split(":")
-        return int(m) * 60 + int(s)
-    except (ValueError, AttributeError):
+# A prescribed pace is either a single pace or a band. Nothing else is a pace:
+# every consumer parses through pace_band_mps, and the planner rejects on write
+# what this cannot read, so a target can never be silently dropped again.
+_PACE_RE = re.compile(r"^\d{1,2}:[0-5]\d$")
+# Half-width of the band synthesized around a SINGLE prescribed pace (m/s).
+# A prescribed range carries its own bounds and does not get widened.
+PACE_BAND_MPS = 0.15
+
+
+def _pace_parts(pace: str | None) -> list[str] | None:
+    """['M:SS'] or ['M:SS', 'M:SS'] for a well-formed pace, else None."""
+    if not isinstance(pace, str):
         return None
+    parts = [p.strip() for p in pace.strip().split("-")]
+    if len(parts) not in (1, 2) or not all(_PACE_RE.match(p) for p in parts):
+        return None
+    return parts
+
+
+def pace_is_well_formed(pace: str | None) -> bool:
+    """True for 'M:SS', 'M:SS-M:SS', and for no pace at all (not a target)."""
+    return pace is None or pace == "" or _pace_parts(pace) is not None
+
+
+def pace_seconds(pace: str | None) -> int | None:
+    """'M:SS' (or the midpoint of an 'M:SS-M:SS' band) -> seconds per km."""
+    parts = _pace_parts(pace)
+    if not parts:
+        return None
+    secs = [int(p.split(":")[0]) * 60 + int(p.split(":")[1]) for p in parts]
+    return round(sum(secs) / len(secs))
+
+
+def pace_band_mps(pace: str | None) -> tuple[float, float] | None:
+    """A prescribed pace -> the (slow, fast) speed bounds in m/s to target.
+
+    'M:SS-M:SS' keeps the bounds the coach actually prescribed; a bare 'M:SS'
+    gets PACE_BAND_MPS either side, because a watch target has to be a range.
+    """
+    parts = _pace_parts(pace)
+    if not parts:
+        # Never fail silently: an unreadable pace used to look identical to
+        # "this step has no pace target" at every call site (ADR 0020).
+        if pace:
+            log.warning("unreadable target_pace %r - treated as no pace target", pace)
+        return None
+    speeds = [pace_to_mps(p) for p in parts]
+    if not all(speeds):
+        return None
+    if len(speeds) == 1:
+        return (speeds[0] - PACE_BAND_MPS, speeds[0] + PACE_BAND_MPS)
+    return (min(speeds), max(speeds))
 
 
 def pace_profile(db: Session, user_id: int, today: dt.date) -> dict | None:

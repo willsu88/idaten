@@ -28,21 +28,9 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from . import metrics
-from .metrics import derive_hr_band, execution_score
+from .metrics import derive_hr_band, execution_score, pace_band_mps
 from .models import Activity, PlanDay, PlanVersion, TrainingPlan
 from .planner import QUALITY_TYPES
-
-# Half-width of the target band around a single prescribed pace (m/s), matching
-# what push.py writes to the watch. execution_score adds decay beyond it.
-PACE_BAND_MPS = 0.15
-
-
-def _pace_band(pace: str | None) -> tuple[float, float] | None:
-    mps = metrics.pace_to_mps(pace) if pace else None
-    if not mps:
-        return None
-    return (mps - PACE_BAND_MPS, mps + PACE_BAND_MPS)
-
 
 def _step_segment(hr_low, hr_high, pace, dur_min, dist_km, label,
                   zones=None, quality=False) -> dict | None:
@@ -56,7 +44,9 @@ def _step_segment(hr_low, hr_high, pace, dur_min, dist_km, label,
         hr_low, hr_high = metrics.ensure_hr_band(hr_low, hr_high, zones, quality)
         axis, low, high = "hr", float(hr_low), float(hr_high)
     else:
-        band = _pace_band(pace)
+        # Scored against exactly the band push.py sent to the watch, so the
+        # score always judges what the athlete was actually shown.
+        band = pace_band_mps(pace)
         if not band:
             return None  # no.target step - nothing to score against
         axis, (low, high) = "pace", band

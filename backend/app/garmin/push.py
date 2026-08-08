@@ -9,6 +9,11 @@ executable steps, repeat blocks become a RepeatGroupDTO with the block's steps
 as children. Days without steps keep the legacy single-step shape (time or
 distance end condition, optional pace/HR target). Rest and cross-train days
 are not pushed.
+
+Step notes deliberately do NOT travel to the watch: Garmin renders a step
+`description` as a notes screen the athlete has to page past mid-interval. The
+cue belongs in the app, before the run. The workout-level description stays -
+it shows on the workout's page in Garmin Connect, not as a running screen.
 """
 
 from __future__ import annotations
@@ -18,13 +23,12 @@ import logging
 
 from sqlalchemy.orm import Session
 
-from ..metrics import pace_to_mps
+from ..metrics import pace_band_mps
 from ..models import PlanDay, User
 from .client import get_garmin
 
 log = logging.getLogger(__name__)
 
-PACE_BAND_MPS = 0.15
 PUSHABLE_TYPES = {"easy_run", "long_run", "tempo", "intervals", "recovery", "race"}
 
 _RUNNING = {"sportTypeId": 1, "sportTypeKey": "running"}
@@ -66,11 +70,11 @@ def _end_condition(step: dict, distance_km, duration_min) -> None:
 
 def _target(step: dict, target_pace, hr_low, hr_high) -> None:
     """One target per step: pace when set, else a custom HR band."""
-    mps = pace_to_mps(target_pace) if target_pace else None
-    if mps:
+    band = pace_band_mps(target_pace)  # warns on its own when it cannot read one
+    if band:
         step["targetType"] = {"workoutTargetTypeId": 6, "workoutTargetTypeKey": "pace.zone"}
-        step["targetValueOne"] = mps - PACE_BAND_MPS  # slow bound
-        step["targetValueTwo"] = mps + PACE_BAND_MPS  # fast bound
+        step["targetValueOne"] = band[0]  # slow bound
+        step["targetValueTwo"] = band[1]  # fast bound
     elif hr_low and hr_high:
         step["targetType"] = {"workoutTargetTypeId": 4, "workoutTargetTypeKey": "heart.rate.zone"}
         step["targetValueOne"] = float(hr_low)   # bpm bounds = custom band
@@ -84,7 +88,6 @@ def _executable_step(s: dict, order: _Order) -> dict:
         "stepOrder": order.next(),
         "stepType": {"stepTypeId": type_id, "stepTypeKey": type_key},
         "targetType": {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"},
-        "description": (s.get("note") or "")[:512],
     }
     _end_condition(step, s.get("distance_km"), s.get("duration_min"))
     _target(step, s.get("target_pace"), s.get("target_hr_low"), s.get("target_hr_high"))
