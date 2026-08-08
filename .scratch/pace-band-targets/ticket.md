@@ -76,4 +76,21 @@ Anything else is rejected on write rather than silently dropped.
 - [x] `CONTEXT.md` gains a "Pace target band" entry beside "HR target band"; `API_CONTRACT.md`
       v1.40 records the widened value set
 - [x] week row `min-w-0` + mobile budget
-- [x] repair the live data: re-push Friday, re-score the activity
+- [x] repair the live data: re-score the affected activity (no re-push - the day is in the past
+      and the workout was already run; re-pushing would only churn the Garmin calendar)
+
+## What the repair actually showed
+
+The corrected score went **down**, 54 -> 43, not up.
+The three work intervals were run at 2.9, 2.9 and 2.6 m/s against a prescribed 2.353-2.439 m/s
+band: roughly 5:45/km and 6:25/km against a 6:50-7:05 target, so they score 1, 2 and 41.
+The session was run far harder than prescribed, and the old scoring could not see it at all.
+
+The dropped steps also distorted every segment that survived, which was not in the original
+diagnosis.
+`execution_score` aligns segments to the series by elapsed time and divides by the *prescribed*
+total, so losing 18 of 38 minutes both shifted each later segment onto the wrong slice of the run
+and shrank the denominator.
+That is why the stored recoveries read 32 and 0: those windows were sampled over the work
+intervals. Re-scored in place they are 43 and 56.
+The old 54 was not a partial score, it was a score of a different run.
