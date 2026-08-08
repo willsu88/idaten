@@ -137,9 +137,16 @@ LIBRARY: list[dict] = [
         "workout_type": "intervals",
         "phases": ["base", "build"],
         "flavors": list(ALL),
-        "structure": "WU 15min E + 6-10 x (60-90s uphill hard @ I effort, jog "
-                     "down recovery) + CD 10min E. Strength + form with less "
-                     "impact than track work.",
+        "structure": "WU 15min E + 6-10 x (45-75s uphill hard @ I effort, jog "
+                     "back down as recovery) + CD 10min E. Strength + form with "
+                     "less impact than track work. Work steps are terrain "
+                     "'uphill' and carry an HR band, never a pace target - "
+                     "uphill pace is the gradient, not the effort. Time the "
+                     "repetition, never a distance: the dose is the duration of "
+                     "the climb, and the same distance is a different session on "
+                     "a different gradient. The jog back down is terrain "
+                     "'downhill' with no duration and no distance (a lap-button "
+                     "step), so the session fits whatever hill the athlete has.",
     },
     {
         "id": "fartlek_surges",

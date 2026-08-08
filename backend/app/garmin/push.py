@@ -10,6 +10,12 @@ as children. Days without steps keep the legacy single-step shape (time or
 distance end condition, optional pace/HR target). Rest and cross-train days
 are not pushed.
 
+Terrain does not travel either, because it cannot: Garmin has no grade trigger
+and no grade target for running, so a hill session reaches the watch as ordinary
+time-based intervals and the watch cannot enforce that a repetition happened on
+a hill (ADR 0021). What terrain DOES decide here is the target type - an uphill
+step is pushed with its HR band and never a pace band.
+
 Step notes deliberately do NOT travel to the watch: Garmin renders a step
 `description` as a notes screen the athlete has to page past mid-interval. The
 cue belongs in the app, before the run. The workout-level description stays -
@@ -23,7 +29,7 @@ import logging
 
 from sqlalchemy.orm import Session
 
-from ..metrics import pace_band_mps
+from ..metrics import pace_band_mps, step_terrain
 from ..models import PlanDay, User
 from .client import get_garmin
 
@@ -68,9 +74,19 @@ def _end_condition(step: dict, distance_km, duration_min) -> None:
         step["endConditionValue"] = 1.0
 
 
-def _target(step: dict, target_pace, hr_low, hr_high) -> None:
-    """One target per step: pace when set, else a custom HR band."""
-    band = pace_band_mps(target_pace)  # warns on its own when it cannot read one
+def _target(step: dict, target_pace, hr_low, hr_high, terrain: str = "flat") -> None:
+    """One target per step: pace when set, else a custom HR band.
+
+    An uphill step never carries a pace target, whatever was prescribed. Uphill
+    pace is a function of the gradient, so a flat-ground band would alarm for
+    the whole repetition. Generation is guarded upstream
+    (`planner.terrain_target_violations`); this is the boundary that makes the
+    rule true of everything that actually reaches the watch, including a day
+    stored before the guard existed.
+    """
+    uphill = terrain == "uphill"
+    # warns on its own when it cannot read one
+    band = None if uphill else pace_band_mps(target_pace)
     if band:
         step["targetType"] = {"workoutTargetTypeId": 6, "workoutTargetTypeKey": "pace.zone"}
         step["targetValueOne"] = band[0]  # slow bound
@@ -79,6 +95,11 @@ def _target(step: dict, target_pace, hr_low, hr_high) -> None:
         step["targetType"] = {"workoutTargetTypeId": 4, "workoutTargetTypeKey": "heart.rate.zone"}
         step["targetValueOne"] = float(hr_low)   # bpm bounds = custom band
         step["targetValueTwo"] = float(hr_high)
+    elif uphill and target_pace:
+        # Never silent: the step reaches the watch untargeted, and that is a
+        # better outcome than an unreachable one, but it is worth a line.
+        log.warning("uphill step carries only a pace target (%r) - pushed with "
+                    "no target; prescribe an HR band for hill work", target_pace)
 
 
 def _executable_step(s: dict, order: _Order) -> dict:
@@ -90,7 +111,8 @@ def _executable_step(s: dict, order: _Order) -> dict:
         "targetType": {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"},
     }
     _end_condition(step, s.get("distance_km"), s.get("duration_min"))
-    _target(step, s.get("target_pace"), s.get("target_hr_low"), s.get("target_hr_high"))
+    _target(step, s.get("target_pace"), s.get("target_hr_low"), s.get("target_hr_high"),
+            step_terrain(s))
     return step
 
 

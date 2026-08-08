@@ -1243,12 +1243,14 @@ def activity_detail(activity_id: int, db: Session = Depends(get_db),
         "time_in_zones": a.time_in_zones,
         "max_hr": raw.get("maxHR"),
         "calories": raw.get("calories"),
-        "elevation_gain_m": raw.get("elevationGain"),
+        "elevation_gain_m": a.elevation_gain_m,
         "start_time_local": raw.get("startTimeLocal"),
         "plan_day": plan_day_dict(plan) if plan else None,
         # ADR 0018: what the execution score judged, frozen at scoring time -
         # a later plan edit never changes it (null on pre-0018 activities).
         "scored_prescription": a.scored_prescription,
+        # Terrain verification for a hill session (null for every other run).
+        "hill_check": a.hill_check,
         "analysis_feedback": feedback_mod.feedback_state(
             db, user.id, "execution_analysis", a.id),
     }
@@ -1310,11 +1312,12 @@ def attribute_activity(activity_id: int, body: AttributionBody,
     a = _own_activity(db, user.id, activity_id)
     a.execution_attributed = body.attempted
     if body.attempted:
-        score, breakdown = execution.score_confirmed(
+        score, breakdown, hill = execution.score_confirmed(
             db, a, settings_store.hr_zones(db, user.id))
         a.execution_score = score
         a.execution_score_source = "idaten" if score is not None else None
         a.execution_breakdown = breakdown
+        a.hill_check = hill
         if score is not None:
             execution.mark_day_completed(db, a.user_id, a.date)
     else:

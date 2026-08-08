@@ -646,6 +646,26 @@ def pace_band_mps(pace: str | None) -> tuple[float, float] | None:
     return (min(speeds), max(speeds))
 
 
+# A step's terrain, orthogonal to its intensity: any workout type can be run
+# uphill. Garmin cannot trigger or target a step on grade (its step schema
+# offers distance/time/HR/calories/lap-button triggers and pace/HR/cadence/power
+# targets, and nothing else), so terrain NEVER reaches the watch as a target.
+# It decides which target type is meaningful to prescribe, and it is what a
+# completed run is verified against afterwards.
+TERRAINS = ("flat", "uphill", "downhill")
+
+
+def step_terrain(step: dict | None) -> str:
+    """A step's terrain, defaulting to flat.
+
+    Steps written before terrain existed carry no key at all, and a flat step is
+    the overwhelming majority; absence and "flat" must therefore stay
+    indistinguishable everywhere rather than becoming a third state.
+    """
+    value = (step or {}).get("terrain")
+    return value if value in TERRAINS else "flat"
+
+
 def pace_profile(db: Session, user_id: int, today: dt.date) -> dict | None:
     """Observed whole-run average paces from the last 90 days of real runs.
 

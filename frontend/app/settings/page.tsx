@@ -377,6 +377,20 @@ export default function SettingsPage() {
                 onChange={(e) => updateAthlete({ notes: e.target.value })}
               />
             </Field>
+            <div>
+              <Field label="Where you run">
+                <Textarea
+                  value={settings.athlete.running_environment ?? ""}
+                  placeholder="Hills, track, trails, treadmill…"
+                  onChange={(e) => updateAthlete({ running_environment: e.target.value })}
+                />
+              </Field>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                The terrain you actually have. Tell the coach about your local hill and how
+                long it is, whether you can get to a track, or if you mostly run trails. It
+                won&apos;t prescribe hill repeats if you have nowhere to run them.
+              </p>
+            </div>
           </CardContent>
         </Card>
 

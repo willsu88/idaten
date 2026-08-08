@@ -139,6 +139,12 @@ class Activity(Base):
     # auto-attribution was ambiguous. None = not asked/undecided, True = confirmed
     # (then scored), False = "just a run" (never scored, never re-asked).
     execution_attributed: Mapped[bool | None] = mapped_column(Boolean)
+    # Terrain verification for a session that prescribed uphill work: did the
+    # climbing actually happen? Kept BESIDE the execution score, never folded
+    # into it - the score is a continuous time-in-band measure, this is a yes/no
+    # fact about the ground. Null whenever the day prescribed no uphill work,
+    # which is almost every run. See execution.hill_check.
+    hill_check: Mapped[Any] = mapped_column(JSON, nullable=True)
     # LLM analysis narrative for the score. Generated LAZILY, once, when the Today
     # page loads on a recent scored run (never for old history, never at sync).
     # Null = not generated; non-null = cached forever.
@@ -159,6 +165,18 @@ class Activity(Base):
     # predictor never re-suggests on it.
     gear_suggestion_dismissed: Mapped[bool | None] = mapped_column(Boolean)
     enriched: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    @property
+    def elevation_gain_m(self) -> float | None:
+        """Total climb, read out of the Garmin summary already in `raw`.
+
+        A property rather than a column on purpose: `raw` has carried this for
+        every activity ever synced, so reading it costs no migration and no
+        backfill, and every row - including years of history - answers today.
+        The Garmin key is spelled once, here.
+        """
+        value = (self.raw or {}).get("elevationGain")
+        return value if isinstance(value, (int, float)) else None
 
 
 class Gear(Base):

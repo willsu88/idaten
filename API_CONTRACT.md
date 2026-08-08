@@ -1773,3 +1773,25 @@ Anything that is not one of those two forms is rejected when the plan is written
 
 - Any client parsing `target_pace` must accept the band form. Rendering it verbatim (`6:50-7:05 /km`) was already correct; arithmetic on it should use the midpoint.
   In this repo `lib/workout.ts` `paceToMinPerKm` does exactly that - it previously fell back to a nominal 6:00/km, sizing distance-based timeline segments wrongly.
+
+## v1.41 - terrain on workout steps, elevation to the coach, hill verification (ADR 0021)
+
+Garmin cannot target or trigger a workout step on gradient, so a hill session reaches the watch as ordinary time-based intervals.
+Everything that makes it a hill session lives in Idaten: the step says where it is run, an uphill step is targeted by effort, and the climb is confirmed after the run.
+
+- `WorkoutStep` gains `terrain: "flat" | "uphill" | "downhill"` (optional; absent means `"flat"`, so no stored step changes meaning).
+  An uphill step always carries an HR band and never a `target_pace`, in every training mode - uphill pace is the gradient, not the effort.
+  A step with neither `duration_min` nor `distance_km` is a lap-button step, now generated deliberately for a hill jog-down rather than only arising from bad data.
+- Activity objects gain nothing, but `GET /api/activities/{id}` gains `hill_check`: `{ prescribed_reps, climbed_reps, ascent_m, verified } | null`.
+  Non-null only when the run was attributed to a plan day that prescribed uphill work - it follows the same attribution as the score (ADR 0018), so a free run on a hill day never carries one.
+  `ascent_m` is the climb over the matched repetitions (all of them, not only the qualifying ones), so a failed check still reports how flat the ground was.
+  It sits beside `execution_score`, never inside it: the score measures effort held in band, this answers whether the ground went up.
+- Settings `athlete` gains `running_environment: string` - free text for what the athlete actually has to run on ("only hill nearby is ~150m at 6%", "no track", "trails").
+  Saved with the rest of the `athlete` blob on the existing debounce; no new endpoint.
+- The coach now receives `elevation_gain_m` on every recent activity in the plan snapshot and on the execution-analysis payload, not only for hill sessions (a hilly easy run is not an easy run). No client-visible field changes.
+
+### UI
+
+- A step row badges `Uphill` / `Downhill` when terrain is set, and shows `Lap press` as the end condition for a lap-button step (previously blank).
+- The execution-score block renders `hill_check` above the coach note when present: confirmation with rep count and total ascent, or an honest note that the reps show almost no climbing and the watch could not enforce the hill.
+- Settings gains a "Where you run" free-text field beside "Notes for the coach".

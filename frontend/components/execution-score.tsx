@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Check } from "lucide-react";
-import type { Activity, ExecutionSegment } from "@/lib/types";
+import type { Activity, ActivityDetail, ExecutionSegment } from "@/lib/types";
 import { CoachNote } from "@/components/coach-note";
 import { MetricInfo } from "@/components/metric-info";
 import { personaForStyle } from "@/components/coach-provider";
@@ -139,10 +139,15 @@ export function ExecutionScore({
   activity,
   analysis,
   analysisPending = false,
+  hillCheck = null,
 }: {
   activity: Activity;
   analysis?: string | null;
   analysisPending?: boolean;
+  // Terrain verification, passed separately because it sits BESIDE the score
+  // rather than inside it: the score measures effort held in band, this answers
+  // whether the ground went up. Null on every run that prescribed no climbing.
+  hillCheck?: ActivityDetail["hill_check"];
 }) {
   if (activity.execution_score == null) return null;
   const text = analysis ?? activity.execution_analysis;
@@ -150,6 +155,30 @@ export function ExecutionScore({
   return (
     <div className="space-y-3">
       <ScoreBadge score={activity.execution_score} source={activity.execution_score_source} size="lg" />
+      {hillCheck && (
+        <p
+          className={cn(
+            "rounded-md border px-3 py-2 text-xs text-foreground",
+            hillCheck.verified
+              ? "border-success/40 bg-success/10"
+              : "border-warning/40 bg-warning/10",
+          )}
+        >
+          {hillCheck.verified ? (
+            <>
+              Hills confirmed: {hillCheck.climbed_reps} of {hillCheck.prescribed_reps}{" "}
+              {hillCheck.prescribed_reps === 1 ? "rep" : "reps"} climbed, {hillCheck.ascent_m} m
+              of ascent.
+            </>
+          ) : (
+            <>
+              This was a hill session, but your reps only climbed {hillCheck.ascent_m} m
+              between them. Your watch can&apos;t enforce the hill, so the effort may still
+              have been honest.
+            </>
+          )}
+        </p>
+      )}
       {activity.plan_mismatch && (
         <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-foreground">
           You ran the original <span className="font-medium">{activity.plan_mismatch.executed}</span> workout

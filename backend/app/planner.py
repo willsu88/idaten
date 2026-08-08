@@ -47,9 +47,13 @@ STEP_SCHEMA: dict = {
         "target_hr_low": {"type": ["integer", "null"], "description": "bpm"},
         "target_hr_high": {"type": ["integer", "null"]},
         "note": {"type": "string", "description": "Short execution cue, e.g. 'controlled, not all-out'. Empty string if none."},
+        "terrain": {"type": "string", "enum": list(metrics.TERRAINS),
+                    "description": "Where this step is run. 'uphill' for a hill "
+                                   "repetition, 'downhill' for the jog back down, "
+                                   "'flat' for everything else (the default)."},
     },
     "required": ["kind", "duration_min", "distance_km", "target_pace",
-                 "target_hr_low", "target_hr_high", "note"],
+                 "target_hr_low", "target_hr_high", "note", "terrain"],
     "additionalProperties": False,
 }
 
@@ -160,6 +164,10 @@ Principles:
 - Non-primary races are tune-ups: schedule them as "race" days at sub-maximal intent,
   keep the days before them easy, and allow 2-4 recovery days after depending on distance.
 - Recent RPE feedback matters: if the athlete rated recent sessions very hard, ease off.
+- `elevation_gain_m` on each recent activity is terrain, and terrain is part of
+  what a run cost. A run with a lot of climb is harder than its pace suggests,
+  so read a slow pace or a high HR against the climb before calling it a bad
+  day, and count a hilly "easy" run as more load than a flat one.
 - menstrual_cycle (only present if the athlete tracks it): its `upcoming` list
   gives every day of the week you are writing a precomputed `phase` and
   `ease_recommended` flag — trust the flags, never re-derive them from dates.
@@ -207,6 +215,13 @@ bpm bands anchored on their lactate threshold HR):
 - "hybrid": HR bands for easy/recovery/long runs (target_pace null), pace for
   tempo/intervals/race (HR null). One target type per day, never both.
 If hr_zones is null (no LTHR yet), fall back to pace targets in every mode.
+An UPHILL step is the one exception, in every training_mode: it always carries
+an HR band and target_pace null. Uphill pace is a function of the gradient, not
+of effort, so a flat-ground pace band is unreachable on a climb - it alarms for
+the whole repetition and scores a correctly-run session as a failure. Heart rate
+absorbs the extra load of the climb, so it is the honest target. When hr_zones
+is null, an uphill step carries NO target at all (both pace and HR null) rather
+than a pace one.
 Every target_pace is written as "M:SS" or as the band "M:SS-M:SS" (slower first,
 faster second), never with units, words, or a "~". A band is preferred when the
 target came from a training_paces range: it is what the watch and the execution
@@ -222,8 +237,17 @@ Structured workouts (the `steps` field) and variety:
   emit concrete `steps`: warmups/cooldowns as their own steps, interval sets as
   repeat blocks (e.g. repeat=6 over [work 800m, recovery 400m]). Step targets
   follow the same training_mode rules; quality work segments always carry pace
-  when the mode allows pace. Day-level duration/distance/targets stay filled in
-  as the whole-workout summary.
+  when the mode allows pace, EXCEPT uphill steps, which always take an HR band.
+  Day-level duration/distance/targets stay filled in as the whole-workout summary.
+- Set `terrain` on every step. A hill session's work steps are "uphill" and its
+  jog-back-down recovery is "downhill"; everything else is "flat".
+- Prescribe an uphill repetition by TIME, never by distance: the dose is the
+  duration of the effort, and the same distance is a different workout on a
+  different gradient. Give the jog back down NEITHER duration_min NOR
+  distance_km (both null) - that is a lap-button step, so the athlete presses
+  when they reach the bottom and the session fits whatever hill they have.
+  Read `athlete.running_environment` first: it says what the athlete actually
+  has to run on, and a hill session needs a hill.
 - `steps: null` for rest, cross_train, and plain single-effort easy/recovery
   runs (unless the template adds strides — then emit the steps).
 - Weekly dose control, in priority order: (1) quality_budget is the MAXIMUM
@@ -388,6 +412,13 @@ def _fmt_pace(a: Activity) -> str | None:
     return metrics.pace_str(a.avg_speed_mps)
 
 
+def _elevation_gain_m(a: Activity) -> int | None:
+    """A run's climb, rounded for the coach. Terrain is part of what a run cost,
+    so this travels on every activity the coach sees, not just hill sessions."""
+    gain = a.elevation_gain_m
+    return round(gain) if gain is not None else None
+
+
 def _athlete_block(db: Session, user_id: int, settings: dict) -> dict:
     """Garmin-derived profile (authoritative when present) + manual notes.
 
@@ -405,6 +436,7 @@ def _athlete_block(db: Session, user_id: int, settings: dict) -> dict:
         "lactate_threshold_hr": auto["lthr"],
         "vo2max_running": auto["vo2max_running"],
         "notes": manual.get("notes") or "",
+        "running_environment": manual.get("running_environment") or "",
     }
 
 
@@ -468,6 +500,9 @@ def build_snapshot(db: Session, user_id: int, today: dt.date) -> dict:
             "duration_min": round((a.duration_s or 0) / 60, 1),
             "avg_hr": a.avg_hr,
             "avg_pace": _fmt_pace(a),
+            # An easy run with 300m of climb is not an easy run, and pace alone
+            # hides that completely.
+            "elevation_gain_m": _elevation_gain_m(a),
             "rpe_1_to_10": a.rpe if a.rpe is not None else a.garmin_rpe,
             "rpe_note": a.rpe_note,
             "feel_1_to_5": a.feel,
@@ -807,13 +842,20 @@ QUALITY_TYPES = {"tempo", "intervals", "race"}
 EASY_TYPES = {"easy_run", "recovery", "long_run"}
 
 
+def _iter_steps(d: dict):
+    """Every step in every block of a day: (step, where). One walk, so the
+    guards below cannot drift apart on which steps they inspect."""
+    for block in d.get("steps") or []:
+        for s in block.get("steps") or []:
+            yield s, f"step {s.get('kind') or 'work'}"
+
+
 def _iter_paces(d: dict):
     """Every pace a day prescribes: (pace, where) for the day-level target and
     every step in every block."""
     yield d.get("target_pace"), "day"
-    for block in d.get("steps") or []:
-        for s in block.get("steps") or []:
-            yield s.get("target_pace"), f"step {s.get('kind') or 'work'}"
+    for s, where in _iter_steps(d):
+        yield s.get("target_pace"), where
 
 
 def pace_format_violations(days: list[dict]) -> list[str]:
@@ -870,10 +912,8 @@ def pace_violations(days: list[dict], profile: dict | None) -> list[str]:
 def _iter_hr_bands(d: dict):
     """Every HR band a day prescribes: (low, high, where) for the day-level
     target and every step in every block."""
-    for block in d.get("steps") or []:
-        for s in block.get("steps") or []:
-            yield s.get("target_hr_low"), s.get("target_hr_high"), \
-                f"step {s.get('kind') or 'work'}"
+    for s, where in _iter_steps(d):
+        yield s.get("target_hr_low"), s.get("target_hr_high"), where
     yield d.get("target_hr_low"), d.get("target_hr_high"), "day"
 
 
@@ -888,6 +928,29 @@ def hr_band_violations(days: list[dict]) -> list[str]:
                     f"{d.get('date')} ({d.get('workout_type')}, {where}): HR band "
                     f"{low}-{high} is not a real range - prescribe the athlete's "
                     f"zone band (at least {metrics.MIN_HR_BAND_WIDTH} bpm wide)")
+    return out
+
+
+def terrain_target_violations(days: list[dict]) -> list[str]:
+    """Deterministic guard: an uphill step never carries a pace target band.
+
+    Uphill pace is set by the gradient, not by effort, so a flat-ground band is
+    unreachable on a climb: `garmin/push.py` would alarm for the whole
+    repetition and `execution.py` would score a correctly-run session as a
+    failure. The training_mode rules alone push the model the wrong way here -
+    a hill session is a quality day, and quality days take pace in the default
+    hybrid mode - so this guard is what actually holds the invariant.
+    """
+    out: list[str] = []
+    for d in days:
+        for s, where in _iter_steps(d):
+            if metrics.step_terrain(s) != "uphill" or not s.get("target_pace"):
+                continue
+            out.append(
+                f"{d.get('date')} ({d.get('workout_type')}, {where}): an uphill "
+                f"step has target_pace {s.get('target_pace')!r} - uphill pace is "
+                "the gradient, not the effort. Prescribe the HR band for that "
+                "effort and set target_pace null")
     return out
 
 
@@ -1038,6 +1101,28 @@ def generate_plan(db: Session, user_id: int, source: str = "daily_job") -> list[
         days = [d for d in result.get("days", []) if d.get("date")]
         for v in hr_band_violations(days):
             log.warning("plan HR band guard STILL violated (user %s): %s", user_id, v)
+    # Terrain guard: same corrective-retry pattern. An uphill step with a pace
+    # target is the one case the training_mode rules actively steer wrong.
+    terrain_violations = terrain_target_violations(days)
+    if terrain_violations:
+        log.warning("plan terrain guard (user %s), retrying once: %s",
+                    user_id, terrain_violations)
+        result = client.complete_structured(
+            system=system,
+            messages=messages + [
+                {"role": "assistant", "content": json.dumps(result)},
+                {"role": "user", "content":
+                    "These uphill steps carry a pace target:\n- "
+                    + "\n- ".join(terrain_violations)
+                    + "\nRevise the plan so every uphill step targets an HR band "
+                      "from hr_zones with target_pace null."},
+            ],
+            schema=PLAN_SCHEMA,
+            name="training_plan",
+        )
+        days = [d for d in result.get("days", []) if d.get("date")]
+        for v in terrain_target_violations(days):
+            log.warning("plan terrain guard STILL violated (user %s): %s", user_id, v)
     chronic = (snapshot.get("load_ramp") or {}).get("chronic_daily_load")
     for warning in check_week(days, snapshot["quality_budget"], chronic,
                               hr_zones=snapshot.get("hr_zones")):
@@ -1418,6 +1503,10 @@ def create_pending_edit(
     # HR band clamp (ADR 0017): a degenerate band is widened to the athlete's
     # zone band - the same band the mirror rule produces - rather than rejected.
     days = [_clamp_hr_bands(d, _hr_zones(db, user_id)) for d in days]
+    # Terrain repair (ADR 0021): the chat path has no corrective-retry loop, so
+    # an uphill step that arrived with a pace target has it dropped here rather
+    # than reaching the watch as a band no one can hold on a climb.
+    days = [_drop_uphill_pace(d) for d in days]
     current: list[dict | None] = []
     for d in days:
         try:
@@ -1438,6 +1527,25 @@ def create_pending_edit(
     db.add(edit)
     db.commit()
     return edit, None
+
+
+def _drop_uphill_pace(d: dict) -> dict:
+    """A copy of day `d` with `target_pace` cleared on every uphill step.
+
+    Follows the ADR 0017 clamp precedent: the chat edit path gets no corrective
+    retry, so the repair is mechanical. It cannot contradict the edit's intent -
+    uphill pace is the gradient rather than the effort, so the dropped target
+    was never holdable, and the step keeps whatever HR band it carries.
+    """
+    if not d.get("steps"):
+        return d
+    return {**d, "steps": [
+        {**block, "steps": [
+            {**s, "target_pace": None} if metrics.step_terrain(s) == "uphill" else s
+            for s in (block.get("steps") or [])
+        ]}
+        for block in d["steps"]
+    ]}
 
 
 def _clamp_hr_bands(d: dict, zones: dict | None) -> dict:
@@ -1864,6 +1972,15 @@ up front ('you ran the original {executed} rather than the edited {planned}
 day') and coach the run they did — NEVER grade or scold them against the plan
 they didn't run.
 
+`elevation_gain_m` is the run's total climb. Terrain is part of what a run cost,
+so read the score against it: a lot of climb makes pace slower and HR higher for
+the same effort. Never call a hilly run slow without naming the hills.
+`hill_check` (only on a session whose plan prescribed uphill work) reports
+whether the climbing actually happened: `verified` true means the uphill
+repetitions were run on a real gradient. If it is false, say so plainly and
+without scolding - the likeliest reason is that they ran the session somewhere
+flat, and the effort may still have been honest.
+
 `context` (when present) carries the FORWARD-LOOKING picture:
 - context.race: the primary race — name, days_to_race, goal_pace/goal_time, and
   Garmin's predicted finish (predicted_pace / predicted_time_s), with vs_goal_s
@@ -1943,6 +2060,7 @@ def write_execution_analysis(db: Session, a: Activity) -> tuple[str, str]:
         "type": a.type,
         "distance_km": round(a.distance_m / 1000, 2) if a.distance_m else None,
         "duration_min": round(a.duration_s / 60) if a.duration_s else None,
+        "elevation_gain_m": _elevation_gain_m(a),
         "execution_score": a.execution_score,
         "score_source": a.execution_score_source,
         "segments": a.execution_breakdown,
@@ -1952,6 +2070,8 @@ def write_execution_analysis(db: Session, a: Activity) -> tuple[str, str]:
     }
     if a.plan_mismatch:
         payload["plan_mismatch"] = a.plan_mismatch
+    if a.hill_check:
+        payload["hill_check"] = a.hill_check
     result = client.complete_structured(
         system=system,
         messages=[{"role": "user",

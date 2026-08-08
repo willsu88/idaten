@@ -18,7 +18,15 @@ COACH_STYLES = ("default", "chill", "strict")
 PLAN_AUTHORING = ("auto", "author")
 
 DEFAULTS: dict = {
-    "athlete": {"age": None, "weekly_km": None, "notes": ""},
+    # `running_environment` is free text describing what the athlete actually
+    # has to run on ("only hill nearby is ~150m at 6%", "no track", "trails").
+    # Deliberately not a structured hill_length/grade pair: the general fact is
+    # where they run, not one hill, and the only consumer is the coach, which
+    # reads prose better than it reads a schema. NOT named `terrain`: that is a
+    # canonical term for a workout step's gradient (CONTEXT.md), and one word
+    # must not carry two meanings.
+    "athlete": {"age": None, "weekly_km": None, "notes": "",
+                "running_environment": ""},
     "llm_provider": config.llm_provider,
     "auto_push_workouts": config.auto_push_workouts,
     "plan_hour": config.plan_hour,

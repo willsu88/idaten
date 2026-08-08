@@ -23,3 +23,4 @@ Each records the context, the options weighed, and why the chosen one won - so t
 - [0018](0018-scores-pinned-to-executed-prescription.md) - An execution score is pinned to the prescription the run actually executed
 - [0019](0019-judge-grades-persisted-context-snapshot.md) - The QA judge grades a persisted snapshot of the context the coach actually saw
 - [0020](0020-pace-targets-are-bands.md) - A prescribed pace is a band, parsed in exactly one place
+- [0021](0021-terrain-is-a-step-property.md) - Terrain is a step property; uphill work is prescribed by effort and verified after the fact

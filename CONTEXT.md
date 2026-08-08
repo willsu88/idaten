@@ -68,6 +68,22 @@ The min/km corridor a plan day or workout step prescribes, written as `"M:SS"` o
 Like an HR target band it is always a corridor, not a point: a single `"M:SS"` is widened by a fixed margin before it reaches the watch or the execution score (ADR 0020).
 The two forms differ only in whether the coach's own bounds were kept; anything that is neither form is rejected when the plan is written, never silently read as "no target".
 
+### Terrain
+Where a workout step is run: `flat`, `uphill`, or `downhill` (absent means flat).
+It is a property of the step, orthogonal to the workout type - any type of running can be done on a gradient, and only some steps of a hill session are uphill.
+The watch cannot target or trigger on gradient, so terrain never reaches it: it decides which target type is meaningful to prescribe, and it is what the completed run is verified against (ADR 0021).
+
+### Hill check
+The post-run verification that a session's prescribed uphill work happened on a real gradient, derived from the per-lap climb Garmin reports.
+It is recorded beside the execution score, never inside it: the score measures effort held in band, the hill check answers whether the ground went up.
+It follows the same attribution as the score - it is a claim about a run that executed the prescription, never about a free run that fell on the same date.
+Absent on any run whose plan prescribed no uphill work, which is almost all of them.
+
+### Running environment
+The athlete's own free-text description of what they have to run on ("only hill nearby is ~150m at 6%", "no track", "trails").
+A member setting the coach reads as prose; it is what stops a hill session being programmed for someone with no hill.
+Distinct from terrain: terrain is one step's gradient as a closed enum, this is the athlete's standing circumstances.
+
 ### Plan mode
 Whether Idaten edits or writes the training week: `editor` means an active Garmin Coach plan is the base and Idaten produces diffs against it; `author` means Idaten writes the week itself.
 Editor is automatic whenever a Garmin plan is active; a member can force author in Settings.

@@ -206,6 +206,10 @@ def _enrich_run_metrics(db: Session, garmin, a: Activity, raw: dict,
         # ADR 0018: freeze what the score judged, and the executed-vs-planned
         # divergence when the run wasn't the current PlanDay's workout.
         a.scored_prescription, a.plan_mismatch = res.prescription, res.mismatch
+        # ADR 0021: terrain check for a hill prescription, resolved against the
+        # same attribution the score used - Garmin cannot enforce that a
+        # repetition happened on a hill, so this is the only place it is checked.
+        a.hill_check = res.hill
         # A scored run WAS attributed to the day's plan → mark it completed so
         # the plan machinery leaves it alone and the Week shows it done.
         if res.score is not None:

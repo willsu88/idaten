@@ -130,6 +130,16 @@ export function stepEndLabel(step: WorkoutStep): string | null {
       : `${Number(step.distance_km.toFixed(2))} km`;
   }
   if (step.duration_min != null) return formatStepDuration(step.duration_min);
+  // Neither bound set is a lap-button step: it runs until the athlete presses
+  // lap. Deliberate for a hill jog-down, where the length of the return trip is
+  // whatever the athlete's hill happens to be.
+  return "Lap press";
+}
+
+/** Badge text for a step's terrain, or null for ordinary flat running. */
+export function stepTerrainLabel(step: WorkoutStep): string | null {
+  if (step.terrain === "uphill") return "Uphill";
+  if (step.terrain === "downhill") return "Downhill";
   return null;
 }
 
@@ -148,7 +158,7 @@ function compactEnd(step: WorkoutStep): string | null {
       : `${Number(step.distance_km.toFixed(2))}km`;
   }
   if (step.duration_min != null) return formatStepDuration(step.duration_min, true);
-  return null;
+  return "lap"; // lap-button step (see stepEndLabel)
 }
 
 function compactStep(step: WorkoutStep): string {

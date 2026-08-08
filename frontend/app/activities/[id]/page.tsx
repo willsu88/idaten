@@ -260,7 +260,7 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <ExecutionScore activity={detail} />
+              <ExecutionScore activity={detail} hillCheck={detail.hill_check} />
             </CardContent>
           </Card>
         )}

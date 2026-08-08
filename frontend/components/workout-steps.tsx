@@ -4,6 +4,7 @@ import {
   formatTotalDuration,
   stepEndLabel,
   stepTargetLabel,
+  stepTerrainLabel,
 } from "@/lib/workout";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +30,7 @@ function blockMinutes(block: StepBlock): number | null {
 function StepRow({ step }: { step: WorkoutStep }) {
   const target = stepTargetLabel(step);
   const end = stepEndLabel(step);
+  const terrain = stepTerrainLabel(step);
   return (
     <div className="flex items-stretch gap-3">
       <span className={cn("w-1 shrink-0 rounded-full", STEP_BAR_CLASSES[step.kind])} />
@@ -43,6 +45,11 @@ function StepRow({ step }: { step: WorkoutStep }) {
           {target && (
             <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium tabular-nums text-foreground/70">
               {target}
+            </span>
+          )}
+          {terrain && (
+            <span className="rounded-md bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+              {terrain}
             </span>
           )}
         </div>

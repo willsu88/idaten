@@ -26,6 +26,12 @@ export type WorkoutType =
 
 export type StepKind = "warmup" | "work" | "recovery" | "cooldown" | "rest";
 
+// Where a step is run. Orthogonal to its kind: any workout type can go uphill.
+// The watch cannot target or trigger on grade, so terrain never reaches it -
+// it decides which target type is meaningful, and it is what the completed run
+// is verified against afterwards.
+export type Terrain = "flat" | "uphill" | "downhill";
+
 export interface WorkoutStep {
   kind: StepKind;
   duration_min: number | null; // exactly one of duration/distance normally set
@@ -34,6 +40,7 @@ export interface WorkoutStep {
   target_hr_low: number | null; // bpm band (per training mode; never both pace+HR)
   target_hr_high: number | null;
   note: string; // short cue, e.g. "controlled, not all-out"
+  terrain?: Terrain; // absent on steps written before terrain existed = "flat"
 }
 
 export interface StepBlock {
@@ -253,6 +260,16 @@ export interface ActivityDetail extends Activity {
   elevation_gain_m: number | null;
   start_time_local: string | null; // "2026-07-16 06:12:00"
   plan_day: PlanDay | null; // what was planned for that date, if anything
+  // Terrain verification, only on a session that prescribed uphill work (null
+  // on every other run). Sits BESIDE the execution score, never inside it: the
+  // watch cannot enforce that a repetition happened on a hill, so this is where
+  // the prescription is checked against the climb the run actually recorded.
+  hill_check: {
+    prescribed_reps: number;
+    climbed_reps: number;
+    ascent_m: number;
+    verified: boolean;
+  } | null;
 }
 
 export interface ActivitySeries {
@@ -561,7 +578,15 @@ export interface Analytics {
 }
 
 export interface Settings {
-  athlete: { age: number | null; weekly_km: number | null; notes: string }; // only `notes` is edited now
+  // only `notes` and `running_environment` are edited now
+  athlete: {
+    age: number | null;
+    weekly_km: number | null;
+    notes: string;
+    // What the athlete has to run on; steers hill/track sessions. Distinct from
+    // a step's `terrain`, which is a closed enum for one step's gradient.
+    running_environment: string;
+  };
   athlete_auto: {
     age: number | null; // from Garmin birth date
     gender: string | null; // "male" | "female"

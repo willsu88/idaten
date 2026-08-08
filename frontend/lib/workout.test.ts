@@ -7,6 +7,7 @@ import {
   formatStepDuration,
   formatTotalDuration,
   stepEndLabel,
+  stepTerrainLabel,
   workoutBreakdown,
 } from "./workout";
 import type { StepBlock, WorkoutStep } from "./types";
@@ -82,8 +83,22 @@ describe("stepEndLabel", () => {
     expect(stepEndLabel(step({ distance_km: 5 }))).toBe("5 km");
   });
 
-  it("is null with no end condition", () => {
-    expect(stepEndLabel(step())).toBeNull();
+  it("names the lap press when neither bound is set", () => {
+    // A hill jog-down is deliberately lap-button: the return trip is however
+    // long the athlete's hill is, so the row must say so rather than sit blank.
+    expect(stepEndLabel(step())).toBe("Lap press");
+  });
+});
+
+describe("stepTerrainLabel", () => {
+  it("badges uphill and downhill work", () => {
+    expect(stepTerrainLabel(step({ terrain: "uphill" }))).toBe("Uphill");
+    expect(stepTerrainLabel(step({ terrain: "downhill" }))).toBe("Downhill");
+  });
+
+  it("stays quiet for ordinary flat running", () => {
+    expect(stepTerrainLabel(step())).toBeNull();
+    expect(stepTerrainLabel(step({ terrain: "flat" }))).toBeNull();
   });
 });
 

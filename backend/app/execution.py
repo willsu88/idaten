@@ -22,6 +22,7 @@ label + the athlete's Garmin HR zones.
 
 from __future__ import annotations
 
+import logging
 from typing import NamedTuple
 
 from sqlalchemy import or_, select
@@ -32,8 +33,11 @@ from .metrics import derive_hr_band, execution_score, pace_band_mps
 from .models import Activity, PlanDay, PlanVersion, TrainingPlan
 from .planner import QUALITY_TYPES
 
+log = logging.getLogger(__name__)
+
+
 def _step_segment(hr_low, hr_high, pace, dur_min, dist_km, label,
-                  zones=None, quality=False) -> dict | None:
+                  zones=None, quality=False, terrain="flat") -> dict | None:
     """One prescription step -> a scoring segment ({axis, low, high, duration_s}).
 
     Legacy days may still carry a degenerate stored band (ADR 0017 predates
@@ -43,6 +47,18 @@ def _step_segment(hr_low, hr_high, pace, dur_min, dist_km, label,
     if hr_low and hr_high:
         hr_low, hr_high = metrics.ensure_hr_band(hr_low, hr_high, zones, quality)
         axis, low, high = "hr", float(hr_low), float(hr_high)
+    elif terrain == "uphill":
+        # Uphill pace is the gradient, not the effort. A climb held at exactly
+        # the right effort misses a flat-ground band by a wide margin, so
+        # scoring it against one fails a correctly-executed repetition. Days
+        # stored before the terrain guard can still carry a pace-only uphill
+        # step; leave those unscored rather than score them wrongly.
+        if pace:
+            # Never silent (the ADR 0020 lesson): dropping a step from the
+            # breakdown looks identical to the step having had no target.
+            log.warning("uphill step prescribed only a pace target (%r) - left "
+                        "out of the execution score", pace)
+        return None
     else:
         # Scored against exactly the band push.py sent to the watch, so the
         # score always judges what the athlete was actually shown.
@@ -69,7 +85,8 @@ def _idaten_segments(day: PlanDay, zones: dict | None) -> list[dict]:
                     seg = _step_segment(s.get("target_hr_low"), s.get("target_hr_high"),
                                         s.get("target_pace"), s.get("duration_min"),
                                         s.get("distance_km"), kind,
-                                        zones, quality and kind == "work")
+                                        zones, quality and kind == "work",
+                                        metrics.step_terrain(s))
                     if seg:
                         segs.append(seg)
     else:
@@ -109,6 +126,63 @@ def _coach_segments(splits, te_label, zones, a: Activity) -> list[dict]:
     return []
 
 
+# Climb below which a repetition did not happen on a hill. A 45-75s uphill
+# effort covers roughly 150-250m; on any gradient worth calling a hill that is
+# at least 10m of ascent, while a flat lap records 0-2m of GPS noise. 8m sits in
+# the gap, well clear of both.
+MIN_REP_ASCENT_M = 8.0
+
+
+def _uphill_reps(day: PlanDay | None) -> int:
+    """How many uphill repetitions the day prescribes, repeat blocks expanded."""
+    if day is None or not day.steps:
+        return 0
+    total = 0
+    for block in day.steps:
+        uphill = [s for s in (block.get("steps") or [])
+                  if metrics.step_terrain(s) == "uphill"]
+        total += len(uphill) * int(block.get("repeat") or 1)
+    return total
+
+
+def hill_check(day: PlanDay | None, splits) -> dict | None:
+    """Did the prescribed uphill work actually happen on a hill? None if the day
+    prescribed no uphill work, or the run has no laps to check.
+
+    Deliberately BESIDE the execution score, never inside it. The score is a
+    continuous time-in-band measure over HR and pace; whether the ground went up
+    is a yes/no fact, and folding a boolean into a continuous score would
+    corrupt both. Garmin has no grade trigger or target, so it cannot enforce
+    that a repetition happened on a hill - this is the only place the
+    prescription is ever checked against the ground.
+
+    Laps are matched to repetitions by CLIMB, not by `wktStepIndex`. Index
+    alignment depends on how a given watch laps a structured workout (and breaks
+    entirely under auto-lap), whereas "the prescribed climbs are the laps that
+    climbed the most" holds however the run was recorded.
+    """
+    reps = _uphill_reps(day)
+    if not reps:
+        return None
+    gains = [lp.get("elevation_gain_m") or 0.0 for lp in splits or []]
+    if not gains:
+        return None
+    hardest = sorted(gains, reverse=True)[:reps]
+    climbed = [g for g in hardest if g >= MIN_REP_ASCENT_M]
+    return {
+        "prescribed_reps": reps,
+        "climbed_reps": len(climbed),
+        # Climb over ALL the matched repetitions, not only the qualifying ones -
+        # otherwise a failed check reports 0m and cannot say how flat the ground
+        # actually was, which is the one number that makes the verdict legible.
+        "ascent_m": round(sum(hardest)),
+        # A majority is enough: an athlete who cuts the set short still ran the
+        # session on a hill, and the execution score already judges the
+        # shortfall. This flag answers terrain, and only terrain.
+        "verified": len(climbed) >= (reps + 1) // 2,
+    }
+
+
 def mark_day_completed(db: Session, user_id: int, date) -> None:
     """Flip a matched plan day to 'completed' so the daily review, materialize,
     and revert-to-Garmin all leave it untouched (and the Week can show it done).
@@ -129,6 +203,10 @@ class ScoreResult(NamedTuple):
     breakdown: list | None = None
     prescription: dict | None = None
     mismatch: dict | None = None
+    # ADR 0021: terrain verification, set only when the prescription judged was
+    # OUR plan day (the only kind that carries step terrain) and the run
+    # actually executed it. Null everywhere else.
+    hill: dict | None = None
 
 
 NOT_SCORED = ScoreResult()
@@ -238,6 +316,12 @@ def score_run(db: Session, a: Activity, full: dict | None,
     # day we actually pushed, or a mismatch (the athlete ran the watch's
     # workout). For a followed non-pushed edit, the watch's score is against
     # the wrong target - compute ours.
+    # Terrain verification follows attribution, exactly as the score does
+    # (ADR 0018): only our own plan day carries step terrain, and a run that
+    # executed some other workout is no evidence about this day's hills.
+    hill = (hill_check(day, a.splits)
+            if mismatch is None and (is_idaten_pushed or prefer_idaten) else None)
+
     gscore = summary.get("directWorkoutComplianceScore")
     if gscore is not None and ((is_coach and not is_idaten_plan)
                                or is_idaten_pushed or mismatch is not None):
@@ -245,7 +329,7 @@ def score_run(db: Session, a: Activity, full: dict | None,
         # watch score judged Idaten's own workout even on a coach-tagged run.
         prescription = (_plan_day_prescription(day) if is_idaten_pushed
                         else _coach_prescription(executed, a, te))
-        return ScoreResult(int(gscore), "garmin", None, prescription, mismatch)
+        return ScoreResult(int(gscore), "garmin", None, prescription, mismatch, hill)
     segs = (_idaten_segments(day, zones) if prefer_idaten
             else _coach_segments(a.splits, te, zones, a))
     out = execution_score(a.series, segs)
@@ -254,7 +338,7 @@ def score_run(db: Session, a: Activity, full: dict | None,
     prescription = (_plan_day_prescription(day) if prefer_idaten
                     else _coach_prescription(executed, a, te))
     return ScoreResult(out["score"], "idaten", out["breakdown"],
-                       prescription, mismatch)
+                       prescription, mismatch, hill)
 
 
 # --- Tier-3: the ambiguous middle -----------------------------------------
@@ -301,13 +385,22 @@ def prompt_label(db: Session, a: Activity) -> str | None:
 
 
 def score_confirmed(db: Session, a: Activity,
-                    zones: dict | None) -> tuple[int | None, list | None]:
+                    zones: dict | None) -> tuple[int | None, list | None, dict | None]:
     """Score a run the athlete confirmed WAS an attempt at that day's planned
-    workout. Returns (score, breakdown)."""
+    workout. Returns (score, breakdown, hill_check).
+
+    The athlete's Yes IS the attribution here, so the terrain check applies on
+    the same terms as the score - but only to our own plan day, since a Garmin
+    coach task carries no step terrain to check against.
+    """
     pw = _planned_workout(db, a.user_id, a.date)
     if not pw:
-        return None, None
-    segs = (_idaten_segments(pw["day"], zones) if pw["source"] == "idaten"
+        return None, None, None
+    is_idaten = pw["source"] == "idaten"
+    segs = (_idaten_segments(pw["day"], zones) if is_idaten
             else _coach_segments(a.splits, pw.get("te"), zones, a))
     out = execution_score(a.series, segs)
-    return (out["score"], out["breakdown"]) if out else (None, None)
+    if not out:
+        return None, None, None
+    hill = hill_check(pw["day"], a.splits) if is_idaten else None
+    return out["score"], out["breakdown"], hill
