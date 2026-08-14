@@ -11,7 +11,7 @@ ADR 0010 named this gap in its consequences: editor-mode grounding must speak HR
 The resolution rule: the band is the athlete's zone containing the prescribed number, from `settings_store.hr_zones` - the same single source execution scoring uses (Garmin-observed boundaries first, LTHR-Friel fallback).
 On an exact zone boundary, the lower zone wins for easy/recovery/long days and the higher zone for quality days.
 When zones are unavailable, or the number falls outside every zone, the band is a fixed ±7 bpm around the number - never a snap into the nearest zone, which would relocate the coach's prescribed effort to fit a possibly-stale zone table.
-Enforcement on the LLM paths follows the pace-guard precedent: `generate_plan` gets one corrective retry when any band (day-level or step-level) is narrower than 5 bpm, `check_week` warns, and the chat edit tool mechanically widens a degenerate band to its containing zone.
+Enforcement on the LLM paths follows the pace-guard precedent: `generate_plan` gets one corrective retry when any band (day-level or step-level) is narrower than `MIN_HR_BAND_WIDTH`, `check_week` warns, and the chat edit tool mechanically widens a degenerate band to its containing zone.
 
 ## Considered Options
 
@@ -27,6 +27,14 @@ Enforcement on the LLM paths follows the pace-guard precedent: `generate_plan` g
 - The band is frozen at resolution time, which matches the established semantics of `put_garmin_hr_zones`: forward planning uses the current zone configuration, a past day stays judged against what was in effect when it was written.
 - Stored bands are resolved data, not Garmin's raw prescription; the original single number survives only in the day's description text.
 - The editor-mode mirror re-materializes still-`planned` days nightly, so future degenerate days self-heal on deploy; past days and user-owned edits keep their zero-width bands in storage.
-- Legacy degenerate bands are handled at scoring time, not by migration: execution scoring resolves any stored band narrower than 5 bpm through the same widening rule before scoring, already-stored execution scores are never recomputed, and the widening rule lives in one shared function with three call sites (mirror write, chat-tool clamp, scoring guard).
+- Legacy degenerate bands are handled at scoring time, not by migration: execution scoring resolves any stored band narrower than `MIN_HR_BAND_WIDTH` through the same widening rule before scoring, already-stored execution scores are never recomputed, and the widening rule lives in one shared function with three call sites (mirror write, chat-tool clamp, scoring guard).
 - The chat-tool clamp silently mutates model output; this is accepted because it widens to the same zone band the mirror rule produces, so the repair cannot contradict the edit's intent.
 - Pin-style protection of user edits (the author-mode-edit-pins ticket) must not shield days that fail this validation, or a degenerate band gets fenced off from the nightly self-heal; that ordering constraint is recorded in both tickets.
+
+## Amendment (2026-08-14): the floor is 10 bpm and the widening rule pads narrow zones
+
+`MIN_HR_BAND_WIDTH` was raised from 5 to 10.
+A 5 bpm corridor (e.g. 145-150) is narrower than the noise a runner cannot steer through - optical-HR error plus cardiac drift alone is on the order of 10 bpm - so it alarms and scores like a point target in practice.
+Raising the floor exposed a latent contradiction: LTHR-Friel z2-z4 each span only 4-5% of LTHR (~7 bpm at typical values), so "widen to the containing zone" could itself emit a sub-floor band, and the corrective retry would demand a width the zone table cannot supply.
+The widening rule therefore pads a resolved zone band symmetrically out to the floor when the zone is narrower; the retry prompt and the planner prompt permit exceeding zone edges for the same reason.
+Zone-anchored semantics survive: the band is still centered on the athlete's zone, only its edges gain at most a couple of bpm each side.

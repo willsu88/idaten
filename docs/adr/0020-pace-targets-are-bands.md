@@ -37,3 +37,10 @@ And `pace_format_violations` runs at the planner and chat-edit boundary with no 
 - "Exactly one place" is true per language, not globally: the grammar is written twice, once in `metrics._pace_parts` and once in `lib/workout.ts`. That is the standing cost of the string form, and it is why the accepted set is deliberately tiny - two shapes a regex states in one line. If it ever grows, that is the signal to take the column-pair migration above.
 - `pace_violations` now checks step-level paces, not only day-level ones. The grounding half is still day-level only, because interval work steps legitimately run faster than any whole-run average.
 - Bad paces already in storage are not migrated. There was one such day; it is repaired by re-scoring, and the write-time guard prevents new ones.
+
+## Amendment (2026-08-14): band width is steered by prompt, not by guard
+
+Production plans prescribed bands too tight to run by (e.g. 5:50-6:10 on an easy day), because nothing told the model how wide a band should be.
+The planner prompt and the chat-tool schema now state the widths: easy/recovery/long bands span at least 20-30 s/km, quality bands at least 10 s/km.
+This is deliberately prompt guidance, not a deterministic width guard: a prescribed band is still used verbatim (this ADR's core rule), because a legitimate tight band exists (a race-pace rep) and a mechanical widener cannot tell it from a mistake.
+If tight bands persist in QA, the escalation path is a `pace_band_width_violations` guard on the ADR 0017 corrective-retry pattern.

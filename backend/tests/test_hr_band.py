@@ -34,6 +34,13 @@ def test_widen_boundary_higher_zone_wins_for_quality():
     assert metrics.widen_hr_target(160, ZONES, quality=True) == [160, 172]
 
 
+def test_widen_pads_a_zone_narrower_than_the_floor():
+    # LTHR-derived z2 spans only 4% of LTHR (~7 bpm): the resolved band is
+    # padded symmetrically to MIN_HR_BAND_WIDTH, never returned sub-floor.
+    narrow = {"z1": [110, 136], "z2": [136, 142], "z3": [143, 150]}
+    assert metrics.widen_hr_target(140, narrow) == [134, 144]
+
+
 def test_widen_without_zones_falls_back_to_fixed_halfwidth():
     assert metrics.widen_hr_target(150, None) == [143, 157]
 
@@ -45,14 +52,16 @@ def test_widen_outside_all_zones_falls_back_not_snaps():
 
 def test_ensure_band_keeps_real_bands():
     assert metrics.ensure_hr_band(130, 145, ZONES) == (130, 145)
-    assert metrics.ensure_hr_band(150, 155, ZONES) == (150, 155)  # width 5 is legal
+    assert metrics.ensure_hr_band(150, 160, ZONES) == (150, 160)  # width 10 is legal
 
 
 def test_ensure_band_widens_degenerate_band_around_midpoint():
     # 152-152 -> midpoint 152 sits in z3 -> the zone band.
     assert metrics.ensure_hr_band(152, 152, ZONES) == (145, 160)
-    # width 4 is still degenerate.
-    assert metrics.ensure_hr_band(150, 154, ZONES) == (145, 160)
+    # width 5 is narrower than steering noise (device error + drift): degenerate.
+    assert metrics.ensure_hr_band(150, 155, ZONES) == (145, 160)
+    # width 9 is still degenerate.
+    assert metrics.ensure_hr_band(148, 157, ZONES) == (145, 160)
 
 
 def test_ensure_band_passes_through_missing_targets():

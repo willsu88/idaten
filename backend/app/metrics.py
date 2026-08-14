@@ -544,9 +544,11 @@ def hr_zones_from_garmin(payload: list | None) -> dict[str, list[int]] | None:
 
 
 # A stored HR target band is always a real range (ADR 0017): anything narrower
-# is invalid data and gets resolved to the athlete's zone band. The fixed
-# fallback half-width approximates a typical z2 half-width.
-MIN_HR_BAND_WIDTH = 5
+# is invalid data and gets resolved to the athlete's zone band. The floor sits
+# above the noise a runner cannot steer through - optical-HR error plus cardiac
+# drift is easily 10 bpm - while staying inside the narrowest real zone. The
+# fixed fallback half-width approximates a typical z2 half-width.
+MIN_HR_BAND_WIDTH = 10
 HR_BAND_FALLBACK_HALFWIDTH = 7
 
 
@@ -561,7 +563,14 @@ def widen_hr_target(hr: int, zones: dict | None, quality: bool = False) -> list[
     matches = [band for _, band in sorted((zones or {}).items())
                if band[0] <= hr <= band[1]]
     if matches:
-        return list(matches[-1] if quality else matches[0])
+        low, high = matches[-1] if quality else matches[0]
+        # A zone narrower than the floor (LTHR-derived z2-z4 can be ~7 bpm)
+        # is padded symmetrically: the result must always be steerable.
+        shortfall = MIN_HR_BAND_WIDTH - (high - low)
+        if shortfall > 0:
+            low -= shortfall // 2
+            high += shortfall - shortfall // 2
+        return [low, high]
     return [hr - HR_BAND_FALLBACK_HALFWIDTH, hr + HR_BAND_FALLBACK_HALFWIDTH]
 
 

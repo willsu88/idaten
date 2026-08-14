@@ -150,7 +150,7 @@ PLAN_SCHEMA: dict = {
     "additionalProperties": False,
 }
 
-SYSTEM_PROMPT = """\
+SYSTEM_PROMPT = f"""\
 You are an experienced running coach generating the next 7 days of a training plan.
 
 Principles:
@@ -211,7 +211,11 @@ Workout targets follow the athlete's training_mode (hr_zones, when present, are
 bpm bands anchored on their lactate threshold HR):
 - "pace": target_pace on every run; target_hr_low/high always null.
 - "hr": HR bands on every run (easy/recovery/long in z1-z2, tempo z3-z4,
-  intervals z4-z5, race by goal); target_pace null.
+  intervals z4-z5, race by goal); target_pace null. An HR band must be wide
+  enough to steer by - optical-HR noise plus cardiac drift is ~10 bpm. For
+  easy/recovery/long runs prescribe the full z1-z2 or z2 span (15+ bpm), not a
+  slice of it; never emit a band narrower than {metrics.MIN_HR_BAND_WIDTH} bpm (widen it symmetrically
+  beyond the zone edges if the zone itself is narrower).
 - "hybrid": HR bands for easy/recovery/long runs (target_pace null), pace for
   tempo/intervals/race (HR null). One target type per day, never both.
 If hr_zones is null (no LTHR yet), fall back to pace targets in every mode.
@@ -225,7 +229,9 @@ than a pace one.
 Every target_pace is written as "M:SS" or as the band "M:SS-M:SS" (slower first,
 faster second), never with units, words, or a "~". A band is preferred when the
 target came from a training_paces range: it is what the watch and the execution
-score both use.
+score both use. A pace band must be honestly runnable, not a point estimate:
+easy/recovery/long bands span at least 20-30 s/km, quality bands at least
+10 s/km. A tighter band alarms on noise the athlete cannot steer through.
 
 Structured workouts (the `steps` field) and variety:
 - Build every quality session (tempo, intervals) and every non-trivial long run
@@ -1093,7 +1099,9 @@ def generate_plan(db: Session, user_id: int, source: str = "daily_job") -> list[
                 {"role": "user", "content":
                     "These HR targets are not real bands:\n- " + "\n- ".join(hr_violations)
                     + "\nRevise the plan so every HR band is the athlete's zone "
-                    "band from hr_zones, never a single number."},
+                    "band from hr_zones, never a single number - and at least "
+                    f"{metrics.MIN_HR_BAND_WIDTH} bpm wide, widened symmetrically "
+                    "beyond the zone edges when the zone itself is narrower."},
             ],
             schema=PLAN_SCHEMA,
             name="training_plan",
