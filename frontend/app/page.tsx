@@ -20,6 +20,7 @@ import { DailyCoachNote } from "@/components/daily-coach-note";
 import { WeeklySummaryCard } from "@/components/weekly-summary-card";
 import { TodayWorkoutCard } from "@/components/workout-card";
 import { EditProposalCard } from "@/components/edit-proposal-card";
+import { SharedWorkoutCard } from "@/components/shared-workout-card";
 import { RpeCard } from "@/components/rpe-card";
 import { AttributionCard } from "@/components/attribution-card";
 import { ResultCard } from "@/components/result-card";
@@ -229,6 +230,12 @@ export default function TodayPage() {
               {data?.pending_edit && (
                 <EditProposalCard edit={data.pending_edit} onResolved={load} />
               )}
+
+              {/* Workouts other members sent me — a decision, like a proposal,
+                  so it sits beside the pending-edit card, never below the fold. */}
+              {data?.shared_inbox?.map((share) => (
+                <SharedWorkoutCard key={share.id} share={share} onResolved={load} />
+              ))}
 
               <ReadinessCard readiness={data?.readiness ?? null} />
 

@@ -19,6 +19,7 @@ import { CyclePhaseChip } from "@/components/cycle-phase-chip";
 import { PlanSourceChip } from "@/components/plan-source-chip";
 import { IntentChip, OtherSportButton } from "@/components/intent-dialog";
 import { RevertButton } from "@/components/revert-button";
+import { ShareWorkoutButton } from "@/components/share-workout-button";
 import { PushButton } from "@/components/workout-card";
 import { WorkoutSteps } from "@/components/workout-steps";
 import { WorkoutTimeline } from "@/components/workout-timeline";
@@ -242,6 +243,7 @@ export default function PlanDayPage({ params }: { params: { date: string } }) {
         <CardFooter className="flex-wrap">
           <PushButton workout={day} onPushed={load} />
           <OtherSportButton date={date} intent={intent} onSaved={load} />
+          <ShareWorkoutButton workout={day} />
           {day.revertible && <RevertButton date={date} onReverted={load} />}
           <Link
             href={{ pathname: "/chat", query: { date } }}

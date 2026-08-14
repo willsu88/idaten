@@ -125,6 +125,11 @@ def delete_user_data(db: Session, user_id: int) -> None:
         if "user_id" in table.columns:
             db.execute(text(f'DELETE FROM "{table.name}" WHERE user_id = :uid'),
                        {"uid": user_id})
+    # shared_workouts hangs off two user columns, neither named user_id: a
+    # removed member's sent and received shares both go with them.
+    db.execute(text('DELETE FROM shared_workouts '
+                    'WHERE from_user_id = :uid OR to_user_id = :uid'),
+               {"uid": user_id})
     db.execute(delete(User).where(User.id == user_id))
     db.commit()
     drop_client(user_id)

@@ -477,6 +477,43 @@ export interface DashboardToday {
   // Today's strength-lane session (planned or completed); null = none.
   strength_session: StrengthSession | null;
   niggles: Niggle[] | null; // open pain reports (null when nothing open - render nothing)
+  // Workouts other members sent me, awaiting accept/decline (ADR 0022).
+  shared_inbox: SharedWorkoutItem[];
+}
+
+// --- shared workouts (ADR 0022) ---
+
+/** The projection of a plan day that crosses between members: the workout
+ * itself, never the sender's rationale or plan state. */
+export type SharedWorkoutCore = Pick<
+  PlanDay,
+  | "workout_type"
+  | "title"
+  | "description"
+  | "duration_min"
+  | "distance_km"
+  | "target_pace"
+  | "target_hr_low"
+  | "target_hr_high"
+  | "steps"
+>;
+
+export interface SharedWorkoutItem {
+  id: number;
+  from: string; // sender display name
+  created_at: string;
+  date: string; // proposed landing date (sender's day by default)
+  workout: SharedWorkoutCore;
+  // Targets translated to MY zones/paces; null when unavailable (reason says why).
+  adapted: SharedWorkoutCore | null;
+  adapt_unavailable_reason: string | null;
+  conflict: { title: string; workout_type: WorkoutType; status: string } | null;
+}
+
+/** Send picker entry (`GET /api/share/members`): other members, names only. */
+export interface ShareMember {
+  id: number;
+  display_name: string;
 }
 
 // The daily review (editor-above-the-DSW). One per user per day.

@@ -360,6 +360,28 @@ class PendingEdit(Base):
     status: Mapped[str] = mapped_column(String, default="pending")  # pending|accepted|dismissed|superseded
 
 
+class SharedWorkout(Base):
+    """A workout one member sent to another (ADR 0022) — the only table where
+    two user_ids share a row. `payload` is a snapshot taken at send time: a
+    whitelisted projection of the sender's PlanDay (never the rationale) plus
+    the sender's fitness parameters (HR zones, VDOT), so the recipient accepts
+    exactly what they reviewed and adaptation runs against the zones the
+    targets were authored under, not whatever the sender has later."""
+
+    __tablename__ = "shared_workouts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    from_user_id: Mapped[int] = mapped_column(Integer, index=True)
+    to_user_id: Mapped[int] = mapped_column(Integer, index=True)
+    date: Mapped[dt.date] = mapped_column(Date)  # proposed landing date
+    # {"workout": {...PlanDay core fields...},
+    #  "sender": {"display_name", "hr_zones", "vdot"}}
+    payload: Mapped[Any] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String, default="pending")  # pending|accepted|declined|expired
+    accept_mode: Mapped[str | None] = mapped_column(String)  # as_is | adapted (set on accept)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class TrainingPlan(Base):
     """The user's active Garmin Coach adaptive plan, mirrored read-only at
     sync time. One row per user; deleted when Garmin has no active plan.

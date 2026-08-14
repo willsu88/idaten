@@ -12,6 +12,7 @@ import { CoachNote } from "@/components/coach-note";
 import { CyclePhaseChip } from "@/components/cycle-phase-chip";
 import { IntentChip, OtherSportButton } from "@/components/intent-dialog";
 import { RevertButton } from "@/components/revert-button";
+import { ShareWorkoutButton } from "@/components/share-workout-button";
 import { PlanSourceChip } from "@/components/plan-source-chip";
 import { WorkoutSteps } from "@/components/workout-steps";
 import { Badge } from "@/components/ui/badge";
@@ -206,6 +207,7 @@ export function TodayWorkoutCard({
       <CardFooter className="flex-wrap">
         <PushButton workout={workout} onPushed={onChanged} />
         <OtherSportButton date={workout.date} intent={intent ?? null} onSaved={onChanged} />
+        <ShareWorkoutButton workout={workout} />
         {workout.revertible && <RevertButton date={workout.date} onReverted={onChanged} />}
         <Link
           href={{ pathname: "/chat", query: { date: workout.date } }}

@@ -24,3 +24,4 @@ Each records the context, the options weighed, and why the chosen one won - so t
 - [0019](0019-judge-grades-persisted-context-snapshot.md) - The QA judge grades a persisted snapshot of the context the coach actually saw
 - [0020](0020-pace-targets-are-bands.md) - A prescribed pace is a band, parsed in exactly one place
 - [0021](0021-terrain-is-a-step-property.md) - Terrain is a step property; uphill work is prescribed by effort and verified after the fact
+- [0022](0022-shared-workouts-cross-tenant-snapshots.md) - A shared workout is a cross-tenant snapshot, adapted deterministically and accepted as an override

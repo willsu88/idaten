@@ -30,6 +30,8 @@ import type {
   QaSummary,
   Race,
   Settings,
+  ShareMember,
+  SharedWorkoutItem,
   StrengthSession,
   SyncStatus,
   TrainingPlanInfo,
@@ -465,6 +467,26 @@ export const api = {
     }),
 
   syncStatus: () => request<SyncStatus>("/api/sync/status"),
+
+  // --- shared workouts (ADR 0022) ---
+  shareMembers: () => request<ShareMember[]>("/api/share/members"),
+
+  shareWorkout: (toUserId: number, date: string) =>
+    request<{ ok: true; id: number }>("/api/share/workout", {
+      method: "POST",
+      body: JSON.stringify({ to_user_id: toUserId, date }),
+    }),
+
+  shareInbox: () => request<SharedWorkoutItem[]>("/api/share/inbox"),
+
+  acceptShare: (id: number, mode: "as_is" | "adapted", date?: string) =>
+    request<{ ok: true; day: PlanDay }>(`/api/share/${id}/accept`, {
+      method: "POST",
+      body: JSON.stringify({ mode, ...(date ? { date } : {}) }),
+    }),
+
+  declineShare: (id: number) =>
+    request<{ ok: true }>(`/api/share/${id}/decline`, { method: "POST" }),
 
   pendingEdit: () => request<PendingEdit | null>("/api/edits/pending"),
 

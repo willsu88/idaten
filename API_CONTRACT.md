@@ -1795,3 +1795,52 @@ Everything that makes it a hill session lives in Idaten: the step says where it 
 - A step row badges `Uphill` / `Downhill` when terrain is set, and shows `Lap press` as the end condition for a lap-button step (previously blank).
 - The execution-score block renders `hill_check` above the coach note when present: confirmation with rep count and total ascent, or an honest note that the reps show almost no climbing and the watch could not enforce the hill.
 - Settings gains a "Where you run" free-text field beside "Notes for the coach".
+
+## v1.42 - shared workouts between household members (ADR 0022)
+
+A member sends a run workout from their plan to another member; the recipient accepts it onto their own plan verbatim or with targets translated to their own zones and paces.
+A share is a snapshot taken at send time; the sender's later plan changes never affect it.
+
+New endpoints (all under the session cookie; no admin requirement):
+
+- `GET /api/share/members` - the send picker: every *other* member as `[{ id, display_name }]`.
+  Deliberately minimal - no usernames, no Garmin state, no admin badges (that roster stays admin-only on `/api/auth/members`).
+- `POST /api/share/workout` body `{ to_user_id, date }` - share the sender's own plan day on `date`.
+  Only run days are shareable (`easy_run | long_run | tempo | intervals | recovery | race`); 404 when the day is missing, 422 when it is a rest/cross-train day or the target is not another member.
+  Returns `{ ok: true, id }`.
+- `GET /api/share/inbox` - the recipient's pending shares, oldest first.
+  Reading the inbox first expires any pending share whose target date has passed.
+  Each item:
+
+  ```
+  {
+    id, from: string,            // sender display name
+    created_at, date,            // ISO; date = proposed landing date
+    workout: PlanDayCore,        // type, title, description, duration_min,
+                                 // distance_km, target_pace, target_hr_low/high, steps
+    adapted: PlanDayCore | null, // same workout with targets translated to MY
+                                 // zones/paces; null when unavailable
+    adapt_unavailable_reason: string | null,
+    conflict: { title, workout_type, status } | null   // my existing day on `date`
+  }
+  ```
+
+- `POST /api/share/{id}/accept` body `{ mode: "as_is" | "adapted", date?: "YYYY-MM-DD" }` - accept onto my plan.
+  `date` overrides the landing date (must be today or later).
+  409 when my day on the landing date is already completed/skipped; 422 for `mode: "adapted"` when adaptation is unavailable.
+  Writes the day with plan-version source `shared` (a user-owned override: the daily job plans around it) and auto-pushes to the watch when `auto_push_workouts` is on.
+  Returns `{ ok: true, day: PlanDay }`.
+- `POST /api/share/{id}/decline` - decline; the share leaves the inbox, the sender is not notified.
+
+`GET /api/dashboard/today` gains `shared_inbox`: the same array `GET /api/share/inbox` returns (so Today renders share cards without a second request).
+
+Adaptation semantics (deterministic, ADR 0022): HR bounds map by position within the sender's frozen zones into the recipient's zones; pace bounds map at equal %vVO2max between the two athletes' VDOTs, then are grounded against the recipient's observed paces.
+A recipient whose training mode is `hr` receives pace targets as their equivalent HR zone band instead.
+When either athlete lacks Garmin-derived zones/VDOT for the targets involved, `adapted` is null and `adapt_unavailable_reason` says why.
+
+### UI
+
+- Day detail (`/plan/[date]`) and the Today workout card gain a "Send to..." action listing the other members; visible only when other members exist and the day is a run.
+- Today renders each `shared_inbox` item as a card beside pending coach edits: sender, workout summary, a side-by-side targets preview (theirs vs mine) when `adapted` is present, and the actions **Accept their targets** / **Accept with my zones** / **Decline**, plus a landing-date picker defaulting to `date`.
+  When `adapted` is null the second button is disabled with `adapt_unavailable_reason` as the explanation.
+- A `conflict` renders as an inline warning ("replaces your planned Tempo") before accept.

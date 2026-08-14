@@ -74,7 +74,9 @@ export const WORKOUT_PURPOSE: Record<WorkoutType, string> = {
  * Intensity target of a plan day: pace ("@ 5:30 /km") or, when pace is null,
  * the HR band ("HR 140–155"). A day has pace OR an HR band, never both.
  */
-export function workoutTargetLabel(workout: PlanDay): string | null {
+export function workoutTargetLabel(
+  workout: Pick<PlanDay, "target_pace" | "target_hr_low" | "target_hr_high">,
+): string | null {
   if (workout.target_pace) return `@ ${workout.target_pace} /km`;
   if (workout.target_hr_low != null && workout.target_hr_high != null) {
     return `HR ${workout.target_hr_low}–${workout.target_hr_high}`;

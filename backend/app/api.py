@@ -53,6 +53,7 @@ from .models import (
     PendingEdit,
     PlanDay,
     Race,
+    SharedWorkout,
     SupportSession,
     SyncLog,
     TrainingPlan,
@@ -60,6 +61,7 @@ from .models import (
     WeeklySummary,
 )
 from . import planner as planner_mod
+from . import sharing
 from .planner import apply_plan_days, evaluate_today, intent_dict, plan_day_dict, plan_mode
 from . import settings_store
 from .settings_store import get_settings, put_settings
@@ -540,6 +542,7 @@ def dashboard_today(db: Session = Depends(get_db), user: User = Depends(current_
         "strength_session": (support_mod.session_dict(strength_today)
                              if strength_today else None),
         "niggles": niggles_mod.active_niggles(db, user.id, today),
+        "shared_inbox": _share_inbox(db, user.id, today),
     }
 
 
@@ -1950,6 +1953,152 @@ def dismiss_edit(edit_id: int, db: Session = Depends(get_db),
                  user: User = Depends(current_user)):
     edit = _own_pending_edit(db, user.id, edit_id)
     edit.status = "dismissed"
+    db.commit()
+    return {"ok": True}
+
+
+# --- shared workouts (ADR 0022) ------------------------------------------------
+# The one deliberate tenant-boundary crossing: a send names the recipient, and
+# every other operation scopes to the authenticated side of the row.
+
+class ShareBody(BaseModel):
+    to_user_id: int
+    date: str
+
+
+class ShareAcceptBody(BaseModel):
+    mode: str
+    date: str | None = None
+
+
+def _parse_date(value: str | None, field: str) -> dt.date:
+    try:
+        return dt.date.fromisoformat(value or "")
+    except ValueError:
+        raise HTTPException(422, f"invalid {field}")
+
+
+@router.get("/share/members")
+def share_members(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """The send picker: every OTHER member, names only. The full roster
+    (usernames, Garmin state, admin badges) stays admin-only on /auth/members."""
+    rows = db.scalars(select(User).where(User.id != user.id).order_by(User.id)).all()
+    return [{"id": u.id, "display_name": u.display_name or u.username} for u in rows]
+
+
+@router.post("/share/workout")
+def share_workout(body: ShareBody, db: Session = Depends(get_db),
+                  user: User = Depends(current_user)):
+    date = _parse_date(body.date, "date")
+    to = db.get(User, body.to_user_id)
+    if to is None or to.id == user.id:
+        raise HTTPException(422, "pick another member to send to")
+    day = db.get(PlanDay, (user.id, date))
+    if day is None:
+        raise HTTPException(404, "no plan day on that date")
+    if day.workout_type not in planner_mod.RUN_TYPES_PLAN:
+        raise HTTPException(422, "only run workouts can be shared")
+    share = SharedWorkout(from_user_id=user.id, to_user_id=to.id, date=date,
+                          payload=sharing.build_payload(db, user, day))
+    db.add(share)
+    db.commit()
+    return {"ok": True, "id": share.id}
+
+
+def _share_inbox(db: Session, user_id: int, today: dt.date) -> list[dict]:
+    """Pending shares for `user_id`, expiring stale ones first (lazy, ADR 0022:
+    no scheduler involvement)."""
+    stale = db.scalars(select(SharedWorkout).where(
+        SharedWorkout.to_user_id == user_id,
+        SharedWorkout.status == "pending",
+        SharedWorkout.date < today)).all()
+    for s in stale:
+        s.status = "expired"
+        db.add(s)
+    if stale:
+        db.commit()
+    pending = db.scalars(select(SharedWorkout).where(
+        SharedWorkout.to_user_id == user_id,
+        SharedWorkout.status == "pending").order_by(SharedWorkout.created_at)).all()
+    if not pending:
+        return []
+    params = sharing.recipient_params(db, user_id, today)
+    out = []
+    for s in pending:
+        reason = sharing.adapt_unavailable_reason(s.payload, params)
+        adapted = None if reason else sharing.adapt_workout(s.payload, params)
+        existing = db.get(PlanDay, (user_id, s.date))
+        conflict = None
+        if existing is not None and existing.workout_type != "rest":
+            conflict = {"title": existing.title, "workout_type": existing.workout_type,
+                        "status": existing.status}
+        out.append(sharing.share_dict(s, adapted, reason, conflict))
+    return out
+
+
+@router.get("/share/inbox")
+def share_inbox(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    return _share_inbox(db, user.id, dt.date.today())
+
+
+def _own_pending_share(db: Session, user_id: int, share_id: int) -> SharedWorkout:
+    s = db.get(SharedWorkout, share_id)
+    if s is None or s.to_user_id != user_id or s.status != "pending":
+        raise HTTPException(404, "no such share")
+    return s
+
+
+@router.post("/share/{share_id}/accept")
+def accept_share(share_id: int, body: ShareAcceptBody,
+                 db: Session = Depends(get_db), user: User = Depends(current_user)):
+    share = _own_pending_share(db, user.id, share_id)
+    if body.mode not in ("as_is", "adapted"):
+        raise HTTPException(422, "mode must be 'as_is' or 'adapted'")
+    today = dt.date.today()
+    land = _parse_date(body.date, "date") if body.date else share.date
+    if land < today:
+        if share.date < today:
+            share.status = "expired"
+            db.commit()
+        raise HTTPException(409, "that date has already passed")
+
+    if body.mode == "adapted":
+        params = sharing.recipient_params(db, user.id, today)
+        reason = sharing.adapt_unavailable_reason(share.payload, params)
+        if reason is not None:
+            raise HTTPException(422, reason)
+        workout = sharing.adapt_workout(share.payload, params)
+    else:
+        workout = dict(share.payload.get("workout") or {})
+
+    existing = db.get(PlanDay, (user.id, land))
+    if existing is not None and existing.status != "planned":
+        raise HTTPException(409, "you already have a completed workout that day")
+    if db.get(DayIntent, (user.id, land)) is not None:
+        # apply_plan_days would silently coerce the run to cross_train; an
+        # explicit refusal is more honest than a mangled accept.
+        raise HTTPException(409, "that day is committed to another sport")
+
+    sender_name = (share.payload.get("sender") or {}).get("display_name") or "a member"
+    day = {**workout, "date": land.isoformat(),
+           "rationale": f"Shared by {sender_name}."}
+    changed = apply_plan_days(
+        db, user.id, [day], source="shared",
+        summary=f'Accepted {sender_name}\'s "{workout.get("title") or "workout"}"')
+    share.status = "accepted"
+    share.accept_mode = body.mode
+    db.commit()
+    if get_settings(db, user.id).get("auto_push_workouts") and changed:
+        push_days(db, changed)
+    row = db.get(PlanDay, (user.id, land))
+    return {"ok": True, "day": plan_day_dict(row)}
+
+
+@router.post("/share/{share_id}/decline")
+def decline_share(share_id: int, db: Session = Depends(get_db),
+                  user: User = Depends(current_user)):
+    share = _own_pending_share(db, user.id, share_id)
+    share.status = "declined"
     db.commit()
     return {"ok": True}
 

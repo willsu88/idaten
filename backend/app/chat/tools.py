@@ -15,7 +15,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import metrics
-from ..models import Activity, DailyHealth, DayIntent, PendingEdit, PlanDay, PlanVersion
+from ..models import (Activity, DailyHealth, DayIntent, PendingEdit, PlanDay,
+                      PlanVersion, SharedWorkout, User)
 from ..planner import STEPS_SCHEMA, WORKOUT_TYPES, intent_dict, plan_day_dict
 
 # Neutral (OpenAI-function) schemas — the seam translates for Anthropic.
@@ -172,6 +173,28 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["summary", "rationale", "days"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_workout_to_friend",
+            "description": (
+                "Send one of the athlete's planned run workouts to another "
+                "household member, by name. The friend sees it on their Today "
+                "page and chooses to accept it as-is or with the targets "
+                "translated to their own zones and paces - never claim it was "
+                "added to their plan; it awaits their acceptance. Only run "
+                "workouts can be sent."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date": {"type": "string", "description": "YYYY-MM-DD of the athlete's own plan day to send"},
+                    "friend": {"type": "string", "description": "the friend's name as the athlete said it (matched against household member names)"},
+                },
+                "required": ["date", "friend"],
             },
         },
     },
@@ -394,6 +417,46 @@ def dispatch(
                         "note": "Awaiting user approval in the UI. Do not claim it is applied."}),
             edit,
         )
+
+    if name == "send_workout_to_friend":
+        from .. import sharing
+        from ..planner import RUN_TYPES_PLAN
+
+        try:
+            date = dt.date.fromisoformat(args["date"])
+        except (ValueError, KeyError):
+            return json.dumps({"error": f"invalid date {args.get('date')!r}"}), None
+        day = db.get(PlanDay, (user_id, date))
+        if day is None:
+            return json.dumps({"error": f"no plan day on {date.isoformat()}"}), None
+        if day.workout_type not in RUN_TYPES_PLAN:
+            return json.dumps({"error": "only run workouts can be sent"}), None
+        # The friend is named, never id-addressed: resolution happens here,
+        # server-side, against the household roster minus the athlete.
+        wanted = (args.get("friend") or "").strip().lower()
+        others = db.scalars(select(User).where(User.id != user_id)).all()
+        matches = [u for u in others if wanted and wanted in
+                   {(u.display_name or "").lower(), u.username.lower()}]
+        if len(matches) != 1:
+            names = sorted((u.display_name or u.username) for u in others)
+            return json.dumps({
+                "error": f"no unique household member named {args.get('friend')!r}",
+                "household_members": names,
+            }), None
+        sender = db.get(User, user_id)
+        share = SharedWorkout(
+            from_user_id=user_id, to_user_id=matches[0].id, date=date,
+            payload=sharing.build_payload(db, sender, day))
+        db.add(share)
+        db.commit()
+        return json.dumps({
+            "status": "sent",
+            "to": matches[0].display_name or matches[0].username,
+            "workout": day.title,
+            "note": ("It's waiting on their Today page; they choose to accept "
+                     "it as-is or adapted to their own zones. Do not claim it "
+                     "is on their plan."),
+        }), None
 
     if name == "propose_strength_sessions":
         from .. import support as support_mod
