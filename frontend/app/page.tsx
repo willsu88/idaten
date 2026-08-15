@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Flag, Watch } from "lucide-react";
-import type { DashboardToday, DayIntent, PlanDay, Settings, WeekSummary } from "@/lib/types";
+import type { DashboardToday, DayIntent, PlanDay, Settings, SleepNight, WeekSummary } from "@/lib/types";
 import { api, safe } from "@/lib/api";
 import { APP_LOCALE, addDays, formatSeconds, isoDate, mondayOf, weekDates } from "@/lib/utils";
 import { WeekStrip, WeekSummaryLine } from "@/components/week-strip";
@@ -14,6 +14,7 @@ import { PageHeader } from "@/components/page-header";
 import { SyncButton } from "@/components/sync-button";
 import { GettingStartedCard } from "@/components/getting-started-card";
 import { ReadinessCard } from "@/components/readiness-card";
+import { SleepLastNightCard } from "@/components/sleep-last-night-card";
 import { CycleTodayCard } from "@/components/cycle-today-card";
 import { NiggleCard } from "@/components/niggle-card";
 import { DailyCoachNote } from "@/components/daily-coach-note";
@@ -40,6 +41,7 @@ export default function TodayPage() {
   const [weekIntents, setWeekIntents] = React.useState<DayIntent[]>([]);
   const [settings, setSettings] = React.useState<Settings | null>(null);
   const [garminConnected, setGarminConnected] = React.useState(true);
+  const [night, setNight] = React.useState<SleepNight | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(false);
   const plan = usePlanInfo();
@@ -50,13 +52,14 @@ export default function TodayPage() {
     try {
       // Week context (the at-a-glance strip) rides along; `safe` so a hiccup
       // there never blanks the dashboard.
-      const [dashboard, intents, sync, s, weekPlan, weekInts] = await Promise.all([
+      const [dashboard, intents, sync, s, weekPlan, weekInts, sleepNight] = await Promise.all([
         api.dashboardToday(),
         safe(api.intents(todayIso, todayIso)),
         safe(api.syncStatus()),
         safe(api.getSettings()),
         safe(api.planWeek(monday)),
         safe(api.intents(monday, addDays(monday, 6))),
+        safe(api.sleepNight(todayIso)),
       ]);
       // First-run users land in the setup wizard until it sets tutorial_done.
       // Only "/" redirects (never /welcome itself), so there is no loop.
@@ -70,6 +73,7 @@ export default function TodayPage() {
       setWeekIntents(weekInts ?? []);
       setSettings(s);
       setGarminConnected(sync?.garmin_connected ?? true);
+      setNight(sleepNight);
       setError(false);
     } catch {
       setError(true);
@@ -238,6 +242,8 @@ export default function TodayPage() {
               ))}
 
               <ReadinessCard readiness={data?.readiness ?? null} />
+
+              <SleepLastNightCard night={night} />
 
               {/* Week context without leaving Today: the same at-a-glance strip
                   as /week; a day tap deep-links to that day's card there. */}
