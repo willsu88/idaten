@@ -17,7 +17,8 @@ from sqlalchemy.orm import Session
 from .. import metrics
 from ..models import (Activity, DailyHealth, DayIntent, PendingEdit, PlanDay,
                       PlanVersion, SharedWorkout, User)
-from ..planner import STEPS_SCHEMA, WORKOUT_TYPES, intent_dict, plan_day_dict
+from ..planner import (RUN_TYPES_PLAN, STEPS_SCHEMA, WORKOUT_TYPES, intent_dict,
+                       plan_day_dict)
 
 # Neutral (OpenAI-function) schemas — the seam translates for Anthropic.
 TOOL_SCHEMAS: list[dict[str, Any]] = [
@@ -68,8 +69,10 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "description": (
                 "Mark a day as committed to another sport (surfing, hiking, freediving, "
                 "cycling...) or as unavailable for running. The planner will never "
-                "schedule a run on that day. Use when the athlete says they're doing "
-                "another sport or can't run on a date. Usually follow up with "
+                "schedule a run on that day. Use ONLY when the athlete will not run "
+                "at all that day — never when they want a run alongside something "
+                "else (a run plus strength goes through propose_plan_edit and "
+                "propose_strength_sessions, with no intent). Usually follow up with "
                 "propose_plan_edit to rebalance the surrounding week."
             ),
             "parameters": {
@@ -404,15 +407,25 @@ def dispatch(
         )
         if error is not None:
             return json.dumps(error), None
-        return (
-            json.dumps({"status": "proposed", "edit_id": edit.id,
-                        "note": "Awaiting user approval in the UI. Do not claim it is applied."}),
-            edit,
-        )
+        payload = {"status": "proposed", "edit_id": edit.id,
+                   "note": "Awaiting user approval in the UI. Do not claim it is applied."}
+        reserved = []
+        for d in edit.changes or []:
+            if d.get("workout_type") in RUN_TYPES_PLAN:
+                intent = db.get(DayIntent, (user_id, dt.date.fromisoformat(d["date"])))
+                if intent is not None:
+                    reserved.append({"date": d["date"], "sport": intent.sport})
+        if reserved:
+            payload["reserved_day_conflicts"] = reserved
+            payload["note"] += (
+                " Warning: the listed days are reserved for another sport; "
+                "accepting this proposal clears those reservations. Tell the "
+                "user that plainly."
+            )
+        return json.dumps(payload), edit
 
     if name == "send_workout_to_friend":
         from .. import sharing
-        from ..planner import RUN_TYPES_PLAN
 
         try:
             date = dt.date.fromisoformat(args["date"])

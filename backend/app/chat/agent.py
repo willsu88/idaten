@@ -102,6 +102,9 @@ Rules:
   or being unavailable, use set_day_intent for that day (this applies immediately),
   then propose_plan_edit to rebalance the surrounding days — e.g. move a long run
   away from the morning after a hard hike, and account for the sport's load.
+  A day intent means NO RUN that day: if the athlete wants to run AND do the other
+  sport (e.g. "a short run with strength training"), do not set an intent — plan
+  the run with propose_plan_edit and the strength with propose_strength_sessions.
 - When the athlete mentions pain, soreness, or an injury ("my knee hurts", "my
   achilles has been tight since Tuesday"), call log_niggle so it persists — the
   daily review will protect it until it clears. When they say a logged issue is

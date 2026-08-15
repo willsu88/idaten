@@ -63,7 +63,8 @@ from .models import (
 )
 from . import planner as planner_mod
 from . import sharing
-from .planner import apply_plan_days, evaluate_today, intent_dict, plan_day_dict, plan_mode
+from .planner import (RUN_TYPES_PLAN, apply_plan_days, evaluate_today, intent_dict,
+                      plan_day_dict, plan_mode)
 from . import settings_store
 from .settings_store import get_settings, put_settings
 
@@ -1977,6 +1978,17 @@ def _own_pending_edit(db: Session, user_id: int, edit_id: int) -> PendingEdit:
 def accept_edit(edit_id: int, db: Session = Depends(get_db),
                 user: User = Depends(current_user)):
     edit = _own_pending_edit(db, user.id, edit_id)
+    # The approval is the authority for day intents too: the athlete just saw a
+    # run on this day in the diff and said yes, which supersedes any standing
+    # other-sport reservation. Without this, apply_plan_days' intent guard
+    # (which protects against unapproved model output) would silently coerce
+    # the approved run back to cross_train.
+    for d in edit.changes or []:
+        if d.get("workout_type") in RUN_TYPES_PLAN:
+            intent = db.get(DayIntent, (user.id, dt.date.fromisoformat(d["date"])))
+            if intent is not None:
+                db.delete(intent)
+    db.flush()
     changed = apply_plan_days(db, user.id, edit.changes, source="chat_edit",
                               summary=edit.summary)
     if edit.strength:

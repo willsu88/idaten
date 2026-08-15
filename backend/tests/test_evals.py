@@ -141,6 +141,32 @@ def test_weekly_km_is_grounded_in_tool_data(world):
 
 
 @requires_real_key
+def test_run_plus_strength_never_reserves_the_day(world, db, user):
+    """A day the athlete still wants to run must not get a day intent.
+
+    Regression from production: "a short run with strength training" led the
+    coach to set_day_intent(strength), whose meaning is no-run-this-day, and
+    the reservation then defeated every accepted run edit on that date. The
+    run goes through propose_plan_edit; strength has its own lane.
+    Mechanical assertions only; no judge needed."""
+    from app.models import DayIntent
+    from app.planner import RUN_TYPES_PLAN
+
+    run, calls = world
+    tomorrow = TODAY + dt.timedelta(days=1)
+    run("I want to run tomorrow also. I will do a short run with strength training.")
+    assert not called(calls, "set_day_intent"), \
+        "a run+strength day must never be reserved as another-sport"
+    assert db.get(DayIntent, (user.id, tomorrow)) is None
+    proposals = called(calls, "propose_plan_edit")
+    assert proposals, f"expected propose_plan_edit; got {[n for n, _ in calls]}"
+    assert any(d.get("date") == tomorrow.isoformat()
+               and d.get("workout_type") in RUN_TYPES_PLAN
+               for p in proposals for d in p.get("days") or []), \
+        f"expected a run proposed for {tomorrow}: {proposals}"
+
+
+@requires_real_key
 def test_other_sport_sets_intent_on_the_right_date(world):
     run, calls = world
     days_ahead = (5 - TODAY.weekday()) % 7 or 7  # next Saturday
