@@ -92,6 +92,30 @@ def load_series(db: Session, user_id: int, start: dt.date, end: dt.date) -> list
     return out
 
 
+def coach_health_dict(h: DailyHealth) -> dict:
+    """One day of wellness as the coach sees it (planner snapshot and the chat
+    get_training_data tool share this shape). Sleep-detail fields are null for
+    days ingested before the sleep page shipped; need_hours lets the model see
+    sleep debt (need vs slept) without a derived field."""
+    def hours(seconds: float | None) -> float | None:
+        return round(seconds / 3600, 1) if seconds else None
+
+    return {
+        "date": h.date.isoformat(),
+        "sleep_hours": hours(h.sleep_seconds),
+        "sleep_score": h.sleep_score,
+        "deep_hours": hours(h.deep_seconds),
+        "rem_hours": hours(h.rem_seconds),
+        "need_hours": round(h.sleep_need_min / 60, 1) if h.sleep_need_min else None,
+        "nap_hours": hours(h.nap_seconds),
+        "hrv": h.hrv,
+        "hrv_baseline": h.hrv_baseline,
+        "resting_hr": h.resting_hr,
+        "body_battery": h.body_battery,
+        "stress_avg": h.stress_avg,
+    }
+
+
 def has_recovery_data(health: DailyHealth | None) -> bool:
     """True once last night's recovery signals have actually landed — not just an
     empty DailyHealth row created by a sync that ran before Garmin processed the

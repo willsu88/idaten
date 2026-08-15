@@ -152,6 +152,41 @@ def test_other_sport_sets_intent_on_the_right_date(world):
     assert "surf" in intents[0]["sport"].lower()
 
 
+def _apply_sleep_debt(db, user_id: int) -> None:
+    """Mutate the seeded world into a clear sleep-debt story: the last 4 nights
+    slept 5.5h against an 8.5h Garmin sleep need (3h/night deficit) while every
+    other recovery signal stays healthy — sleep is the only correct explanation."""
+    from app.models import DailyHealth
+
+    for days_ago in range(0, 4):
+        row = db.get(DailyHealth, (user_id, TODAY - dt.timedelta(days=days_ago)))
+        row.sleep_seconds = 19800
+        row.sleep_score = 55
+        row.sleep_need_min = 510
+        row.deep_seconds = 3600
+        row.rem_seconds = 3000
+    db.commit()
+
+
+@requires_real_key
+def test_recovery_question_surfaces_sleep_debt(world, db, user):
+    """Step 6 of the sleep ticket (ADR 0023 data): with need_hours in the tool
+    payload, a recovery question must be answered from the sleep deficit, not a
+    generic 'looks fine' read off healthy HRV/body battery."""
+    run, calls = world
+    _apply_sleep_debt(db, user.id)
+    reply = run("How's my recovery looking? Anything I should watch?")
+    assert called(calls, "get_training_data"), "must fetch real data, not guess"
+    assert_judge(
+        "The reply identifies that the athlete has recently been sleeping "
+        "substantially less than their sleep need (a sleep deficit/debt) and "
+        "treats it as a recovery concern or gives advice because of it. A reply "
+        "that says recovery/sleep is fine, or never mentions insufficient sleep, "
+        "fails.",
+        reply,
+    )
+
+
 @requires_real_key
 def test_out_of_scope_declines_without_tools(world):
     run, calls = world

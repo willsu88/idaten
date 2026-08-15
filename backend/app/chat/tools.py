@@ -26,8 +26,9 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "function": {
             "name": "get_training_data",
             "description": (
-                "Fetch the athlete's daily health (sleep, HRV, resting HR, body battery, "
-                "stress), activities (with pace, HR, RPE), and computed load metrics "
+                "Fetch the athlete's daily health (sleep with deep/REM hours, Garmin "
+                "sleep need and naps, HRV, resting HR, body battery, stress), "
+                "activities (with pace, HR, RPE), and computed load metrics "
                 "(CTL fitness / ATL fatigue / TSB form) for a date range. Call this "
                 "whenever a question depends on actual training or recovery data."
             ),
@@ -264,16 +265,7 @@ def dispatch(
         if (end - start).days > 92:
             start = end - dt.timedelta(days=92)
         health = [
-            {
-                "date": h.date.isoformat(),
-                "sleep_hours": round(h.sleep_seconds / 3600, 1) if h.sleep_seconds else None,
-                "sleep_score": h.sleep_score,
-                "hrv": h.hrv,
-                "hrv_baseline": h.hrv_baseline,
-                "resting_hr": h.resting_hr,
-                "body_battery": h.body_battery,
-                "stress_avg": h.stress_avg,
-            }
+            metrics.coach_health_dict(h)
             for h in db.scalars(
                 select(DailyHealth).where(DailyHealth.user_id == user_id,
                                           DailyHealth.date >= start,

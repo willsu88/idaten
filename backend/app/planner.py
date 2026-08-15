@@ -520,16 +520,7 @@ def build_snapshot(db: Session, user_id: int, today: dt.date) -> dict:
         )
     ]
     recent_health = [
-        {
-            "date": h.date.isoformat(),
-            "sleep_hours": round(h.sleep_seconds / 3600, 1) if h.sleep_seconds else None,
-            "sleep_score": h.sleep_score,
-            "hrv": h.hrv,
-            "hrv_baseline": h.hrv_baseline,
-            "resting_hr": h.resting_hr,
-            "body_battery": h.body_battery,
-            "stress_avg": h.stress_avg,
-        }
+        metrics.coach_health_dict(h)
         for h in db.scalars(
             select(DailyHealth).where(DailyHealth.user_id == user_id,
                                       DailyHealth.date >= window_start).order_by(DailyHealth.date)
