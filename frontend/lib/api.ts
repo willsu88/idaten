@@ -32,6 +32,8 @@ import type {
   Settings,
   ShareMember,
   SharedWorkoutItem,
+  SleepDay,
+  SleepNight,
   StrengthSession,
   SyncStatus,
   TrainingPlanInfo,
@@ -283,6 +285,10 @@ export const api = {
   analytics: (days: number) => request<Analytics>(`/api/analytics?days=${days}`),
 
   trends: (days: number) => request<{ daily: TrendPoint[] }>(`/api/trends?days=${days}`),
+
+  sleepDaily: (days: number) => request<{ daily: SleepDay[] }>(`/api/sleep?days=${days}`),
+
+  sleepNight: (date: string) => request<SleepNight>(`/api/sleep/${date}`),
 
   activities: (limit = 20, offset = 0, type?: string, days?: number, month?: string) =>
     request<Activity[]>(

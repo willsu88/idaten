@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import type { Readiness } from "@/lib/types";
 import { READINESS_CLASSES } from "@/lib/workout";
 import { MetricInfo } from "@/components/metric-info";
@@ -49,18 +51,21 @@ function StatTile({
   sub,
   tone,
   info,
+  href,
 }: {
   label: string;
   value: string;
   sub?: string;
   tone?: "success" | "warning" | "danger";
   info?: React.ReactNode;
+  href?: string;
 }) {
-  return (
-    <div className="rounded-xl border border-border bg-background/50 px-3 py-2.5">
+  const body = (
+    <>
       <p className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
         {label}
         {info}
+        {href && <ChevronRight className="ml-auto h-3.5 w-3.5" />}
       </p>
       <p
         className={cn(
@@ -73,8 +78,17 @@ function StatTile({
         {value}
         {sub && <span className="ml-1 text-xs font-normal text-muted-foreground">{sub}</span>}
       </p>
-    </div>
+    </>
   );
+  const className = "rounded-xl border border-border bg-background/50 px-3 py-2.5";
+  if (href) {
+    return (
+      <Link href={href} className={cn(className, "transition-colors hover:border-accent/50 hover:bg-muted/50")}>
+        {body}
+      </Link>
+    );
+  }
+  return <div className={className}>{body}</div>;
 }
 
 export function ReadinessCard({ readiness }: { readiness: Readiness | null }) {
@@ -128,6 +142,7 @@ export function ReadinessCard({ readiness }: { readiness: Readiness | null }) {
               label="Sleep"
               value={c.sleep_hours == null ? "–" : `${c.sleep_hours.toFixed(1)}h`}
               sub={c.sleep_score == null ? undefined : `score ${Math.round(c.sleep_score)}`}
+              href="/sleep"
             />
             <StatTile
               label="Body battery"

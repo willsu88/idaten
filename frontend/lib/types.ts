@@ -534,6 +534,94 @@ export interface DashboardReview {
   data_overdue?: boolean; // still no data well past plan_hour — show the calm state, promote "Review anyway"
 }
 
+// Sleep page (contract v1.43). Stage/nap/need fields are null for days the
+// backfill has not repopulated.
+export interface SleepDay {
+  date: string;
+  sleep_hours: number | null;
+  sleep_score: number | null;
+  deep_hours: number | null;
+  light_hours: number | null;
+  rem_hours: number | null;
+  awake_hours: number | null;
+  nap_hours: number | null;
+  nap_count: number | null;
+  need_hours: number | null;
+  bedtime: string | null;    // naive local ISO
+  wake_time: string | null;  // naive local ISO
+  awake_count: number | null;
+  restless_moments: number | null;
+  avg_sleep_stress: number | null;
+  avg_respiration: number | null;
+  hrv: number | null;
+  resting_hr: number | null;
+  body_battery_change: number | null;
+}
+
+export interface SleepScoreComponent {
+  value: number | null;
+  qualifier: string | null;  // EXCELLENT | GOOD | FAIR | POOR
+  optimal_start: number | null;
+  optimal_end: number | null;
+}
+
+export interface SleepSeriesPoint {
+  t: number; // epoch ms GMT
+  v: number;
+}
+
+export interface SleepNight {
+  date: string;
+  available: boolean;
+  bedtime_ms?: number | null;
+  wake_ms?: number | null;
+  score?: {
+    overall: number | null;
+    qualifier: string | null;
+    components: Record<string, SleepScoreComponent>;
+  };
+  stages?: {
+    deep_s: number | null;
+    light_s: number | null;
+    rem_s: number | null;
+    awake_s: number | null;
+    unmeasurable_s: number | null;
+  };
+  need?: {
+    baseline_min: number | null;
+    actual_min: number | null;
+    feedback: string | null;
+    training_feedback: string | null;
+    history_adjustment: string | null;
+    hrv_adjustment: string | null;
+    nap_adjustment: string | null;
+  };
+  naps?: {
+    start_ms: number | null;
+    end_ms: number | null;
+    seconds: number | null;
+    feedback: string | null;
+  }[];
+  hypnogram?: { start_ms: number; end_ms: number; level: number }[];
+  series?: {
+    heart_rate: SleepSeriesPoint[];
+    hrv: SleepSeriesPoint[];
+    stress: SleepSeriesPoint[];
+    body_battery: SleepSeriesPoint[];
+    respiration: SleepSeriesPoint[];
+  };
+  physio?: {
+    avg_overnight_hrv: number | null;
+    hrv_status: string | null;
+    resting_hr: number | null;
+    body_battery_change: number | null;
+    avg_sleep_stress: number | null;
+    respiration: { low: number | null; avg: number | null; high: number | null };
+  };
+  awake_count?: number | null;
+  restless_moments?: number | null;
+}
+
 export interface TrendPoint {
   date: string;
   hrv: number | null;

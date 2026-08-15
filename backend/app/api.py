@@ -20,8 +20,8 @@ from sqlalchemy.orm import Session
 
 from . import (chat_quota, crypto, execution, feedback as feedback_mod,
                instance_settings, metrics, niggles as niggles_mod, rate_limit,
-               races as races_mod, scheduler, support as support_mod,
-               weekly as weekly_mod)
+               races as races_mod, scheduler, sleep as sleep_mod,
+               support as support_mod, weekly as weekly_mod)
 from .config import config
 from .auth import (
     COOKIE_NAME,
@@ -54,6 +54,7 @@ from .models import (
     PlanDay,
     Race,
     SharedWorkout,
+    SleepDetail,
     SupportSession,
     SyncLog,
     TrainingPlan,
@@ -1181,6 +1182,52 @@ def trends(days: int = 90, db: Session = Depends(get_db),
         })
         d += dt.timedelta(days=1)
     return {"daily": daily}
+
+
+def _hours(seconds: float | None) -> float | None:
+    return round(seconds / 3600, 1) if seconds else None
+
+
+@router.get("/sleep")
+def sleep_daily(days: int = 90, db: Session = Depends(get_db),
+                user: User = Depends(current_user)):
+    """One row per day for the sleep page's trend charts (contract v1.43).
+    Stage/nap/need columns are null for days a backfill has not repopulated."""
+    end = dt.date.today()
+    start = end - dt.timedelta(days=min(days, 365))
+    rows = db.scalars(select(DailyHealth)
+                      .where(DailyHealth.user_id == user.id, DailyHealth.date >= start)
+                      .order_by(DailyHealth.date)).all()
+    return {"daily": [{
+        "date": h.date.isoformat(),
+        "sleep_hours": _hours(h.sleep_seconds),
+        "sleep_score": h.sleep_score,
+        "deep_hours": _hours(h.deep_seconds),
+        "light_hours": _hours(h.light_seconds),
+        "rem_hours": _hours(h.rem_seconds),
+        "awake_hours": _hours(h.awake_seconds),
+        "nap_hours": _hours(h.nap_seconds),
+        "nap_count": h.nap_count,
+        "need_hours": round(h.sleep_need_min / 60, 1) if h.sleep_need_min else None,
+        "bedtime": h.sleep_start_ts.isoformat() if h.sleep_start_ts else None,
+        "wake_time": h.sleep_end_ts.isoformat() if h.sleep_end_ts else None,
+        "awake_count": h.awake_count,
+        "restless_moments": h.restless_moments,
+        "avg_sleep_stress": h.avg_sleep_stress,
+        "avg_respiration": h.avg_respiration,
+        "hrv": h.hrv,
+        "resting_hr": h.resting_hr,
+        "body_battery_change": h.body_battery_change,
+    } for h in rows]}
+
+
+@router.get("/sleep/{date}")
+def sleep_detail(date: dt.date, db: Session = Depends(get_db),
+                 user: User = Depends(current_user)):
+    row = db.get(SleepDetail, (user.id, date))
+    if not row or not row.raw:
+        return {"date": date.isoformat(), "available": False}
+    return sleep_mod.detail_from_raw(date, row.raw)
 
 
 @router.get("/activities")

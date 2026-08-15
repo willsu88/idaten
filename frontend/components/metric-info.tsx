@@ -19,7 +19,9 @@ export type MetricId =
   | "niggle"
   | "rpe"
   | "plan_source"
-  | "training_mode";
+  | "training_mode"
+  | "sleep_score"
+  | "sleep_need";
 
 /**
  * Coaching copy per metric — this exact wording is part of the product
@@ -85,6 +87,14 @@ const METRIC_COPY: Record<MetricId, { title: string; body: string }> = {
   training_mode: {
     title: "Training mode",
     body: "How your workout targets are expressed. Pace gives every run a min/km target. Heart rate gives HR-band targets, which self-adjust for heat, hills, and fatigue. Hybrid (recommended) uses HR bands for easy and long runs - where holding the right effort matters more than speed - and pace for quality sessions where you are chasing a specific time.",
+  },
+  sleep_score: {
+    title: "Sleep score",
+    body: "Garmin's 0-100 rating of last night, combining how long you slept, time in deep and REM stages, restlessness, and overnight stress. 80+ is a genuinely restorative night; under 60 means your body did not recover well, whatever the hours say. The breakdown below the score shows which ingredient dragged it down - that is the thing to fix, not the number itself.",
+  },
+  sleep_need: {
+    title: "Sleep need",
+    body: "How much sleep your body needs tonight, per Garmin: a personal baseline adjusted up for hard training, accumulated sleep debt, and a suppressed HRV, and down for naps. Compare it to what you actually got - repeatedly sleeping under your need is the earliest overtraining signal you will get, days before it shows in HRV or resting HR.",
   },
 };
 

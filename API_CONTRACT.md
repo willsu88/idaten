@@ -272,6 +272,8 @@ The same `MetricInfo` component also carries plain-language explanations for the
 - **RPE (perceived effort)** — "Rate of Perceived Exertion - how hard the run felt to you, from 1 (easy jog) to 10 (all-out). It is your subjective read, and it is worth logging because it catches what the watch cannot: a run that felt awful at an easy heart rate is a fatigue flag, and an easy-feeling hard session means you are fit. The coach weighs your recent RPE alongside the objective data when planning." (RPE scale + read-only Effort card)
 - **Plan source** — "Who writes your training plan. 'Follow my Garmin Coach plan' keeps Garmin's plan as the base and has Idaten review it, offering tweaks as proposals you approve - it never silently overwrites Garmin. 'Let Idaten write my whole plan' hands the full 7-day plan to Idaten instead - best if you have no Garmin Coach plan, or you want Idaten fully in charge." (Settings)
 - **Training mode** — "How your workout targets are expressed. Pace gives every run a min/km target. Heart rate gives HR-band targets, which self-adjust for heat, hills, and fatigue. Hybrid (recommended) uses HR bands for easy and long runs - where holding the right effort matters more than speed - and pace for quality sessions where you are chasing a specific time." (Settings)
+- **Sleep score** — "Garmin's 0-100 rating of last night, combining how long you slept, time in deep and REM stages, restlessness, and overnight stress. 80+ is a genuinely restorative night; under 60 means your body did not recover well, whatever the hours say. The breakdown below the score shows which ingredient dragged it down - that is the thing to fix, not the number itself." (Sleep page, v1.43)
+- **Sleep need** — "How much sleep your body needs tonight, per Garmin: a personal baseline adjusted up for hard training, accumulated sleep debt, and a suppressed HRV, and down for naps. Compare it to what you actually got - repeatedly sleeping under your need is the earliest overtraining signal you will get, days before it shows in HRV or resting HR." (Sleep page, v1.43)
 
 Implement as one shared `MetricInfo` component with a copy map, so the same explanation appears wherever the metric shows up (trends charts, readiness stat tiles' TSB, etc.).
 
@@ -1844,3 +1846,64 @@ When either athlete lacks Garmin-derived zones/VDOT for the targets involved, `a
 - Today renders each `shared_inbox` item as a card beside pending coach edits: sender, workout summary, a side-by-side targets preview (theirs vs mine) when `adapted` is present, and the actions **Accept their targets** / **Accept with my zones** / **Decline**, plus a landing-date picker defaulting to `date`.
   When `adapted` is null the second button is disabled with `adapt_unavailable_reason` as the explanation.
 - A `conflict` renders as an inline warning ("replaces your planned Tempo") before accept.
+
+## v1.43 - sleep page (full Garmin sleep payload surfaced)
+
+Backend now ingests the whole `get_sleep_data` payload: stage seconds, naps, sleep need, score breakdown, and overnight time series.
+Scalars land as columns on `daily_health`; the verbatim payload is archived per night in `sleep_detail` and parsed down by the detail endpoint below.
+Historical rows are null until a backfill run repopulates them.
+
+Time conventions: `bedtime` / `wake_time` are naive local ISO datetimes (Garmin's local wall clock, no offset suffix); every timestamp inside `detail` series/hypnogram/naps is epoch **milliseconds GMT** - the frontend renders them in the browser's timezone.
+
+New endpoints:
+
+- `GET /api/sleep?days=90` (max 365) - one row per calendar day for trend charts:
+
+  ```
+  { daily: [{
+      date,
+      sleep_hours, sleep_score,            // same values Trends already shows
+      deep_hours, light_hours, rem_hours, awake_hours,   // null pre-backfill
+      nap_hours, nap_count,
+      need_hours,                          // Garmin sleep need (actual) in hours
+      bedtime, wake_time,                  // naive local ISO or null
+      awake_count, restless_moments,
+      avg_sleep_stress, avg_respiration,
+      hrv, resting_hr, body_battery_change
+  }] }
+  ```
+
+- `GET /api/sleep/{date}` - one night, parsed from the archived payload.
+  `{ date, available: false }` when no payload is archived for that date (watch not worn, or pre-backfill); otherwise `available: true` plus:
+
+  ```
+  {
+    bedtime_ms, wake_ms,                  // epoch ms GMT
+    score: {
+      overall, qualifier,                 // 0-100, EXCELLENT|GOOD|FAIR|POOR
+      components: {                       // keys: total_duration, stress, awake_count,
+        [key]: { value: number|null,      //   restlessness, rem_percentage,
+                 qualifier,               //   light_percentage, deep_percentage
+                 optimal_start, optimal_end }   // Garmin's optimal band, null when absent
+      }
+    },
+    stages: { deep_s, light_s, rem_s, awake_s, unmeasurable_s },
+    need: { baseline_min, actual_min, feedback, training_feedback,
+            history_adjustment, hrv_adjustment, nap_adjustment },  // enums or null
+    naps: [{ start_ms, end_ms, seconds, feedback }],
+    hypnogram: [{ start_ms, end_ms, level }],   // 0 deep, 1 light, 2 rem, 3 awake
+    series: {                             // each [{ t: epoch ms GMT, v: number }]
+      heart_rate, hrv, stress, body_battery, respiration
+    },
+    physio: { avg_overnight_hrv, hrv_status, resting_hr, body_battery_change,
+              avg_sleep_stress,
+              respiration: { low, avg, high } },
+    awake_count, restless_moments
+  }
+  ```
+
+### UI
+
+- New `/sleep` page: last-night hero (score + hypnogram + stage bars against optimal bands), score-component breakdown, sleep need vs actual with adjustment reasons, overnight HRV / heart-rate / body-battery curves, naps listed with Garmin's feedback, and 30/90d trends (duration vs need, score, bedtime/wake consistency).
+- The SLEEP stat tile on the readiness card links to `/sleep`; a sidebar entry appears under More.
+- Today renders a compact "Last night" card under the readiness card (duration, score, proportional stage bar, need %, naps), fed by `GET /api/sleep/{today}` and hidden until the morning sync has archived the night - render-only, no wire-shape change.

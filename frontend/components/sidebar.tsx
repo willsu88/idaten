@@ -11,6 +11,7 @@ import {
   Flag,
   Footprints,
   MessageSquare,
+  Moon,
   MoreHorizontal,
   Settings,
   Shield,
@@ -29,6 +30,7 @@ const NAV = [
   { href: "/week", label: "Week", icon: CalendarDays },
   { href: "/chat", label: "Chat", icon: MessageSquare },
   { href: "/trends", label: "Trends", icon: TrendingUp },
+  { href: "/sleep", label: "Sleep", icon: Moon },
   { href: "/races", label: "Races", icon: Flag },
   { href: "/activities", label: "Activities", icon: Footprints },
   { href: "/gear", label: "Gear", icon: Backpack },
@@ -95,6 +97,7 @@ const PRIMARY_TABS = [
 ] as const;
 
 const MORE_ITEMS = [
+  { href: "/sleep", label: "Sleep", icon: Moon },
   { href: "/races", label: "Races", icon: Flag },
   { href: "/activities", label: "Activities", icon: Footprints },
   { href: "/gear", label: "Gear", icon: Backpack },

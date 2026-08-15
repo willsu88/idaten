@@ -13,7 +13,7 @@ from garminconnect import GarminConnectTooManyRequestsError
 from sqlalchemy.orm import Session
 
 from ..config import config
-from ..models import Activity, DailyHealth, User
+from ..models import Activity, DailyHealth, SleepDetail, User
 from .client import get_garmin
 
 log = logging.getLogger(__name__)
@@ -26,6 +26,14 @@ def _get(d: dict | None, *path, default=None):
             return default
         cur = cur[p]
     return cur if cur is not None else default
+
+
+def _local_dt(epoch_ms) -> dt.datetime | None:
+    """Garmin '*TimestampLocal' fields are epoch ms whose UTC reading is the
+    local wall time; decode to a naive local datetime."""
+    if not isinstance(epoch_ms, (int, float)):
+        return None
+    return dt.datetime.fromtimestamp(epoch_ms / 1000, dt.timezone.utc).replace(tzinfo=None)
 
 
 def sync_activities(db: Session, user_id: int, garmin, start: dt.date, end: dt.date) -> int:
@@ -118,6 +126,26 @@ def sync_health_day(db: Session, user_id: int, garmin, date: dt.date) -> None:
         dto = _get(sleep, "dailySleepDTO", default={}) or {}
         row.sleep_seconds = dto.get("sleepTimeSeconds")
         row.sleep_score = _get(dto, "sleepScores", "overall", "value")
+        row.deep_seconds = dto.get("deepSleepSeconds")
+        row.light_seconds = dto.get("lightSleepSeconds")
+        row.rem_seconds = dto.get("remSleepSeconds")
+        row.awake_seconds = dto.get("awakeSleepSeconds")
+        row.awake_count = dto.get("awakeCount")
+        row.avg_sleep_stress = dto.get("avgSleepStress")
+        row.avg_respiration = dto.get("averageRespirationValue")
+        row.nap_seconds = dto.get("napTimeSeconds")
+        naps = dto.get("dailyNapDTOS")
+        row.nap_count = len(naps) if isinstance(naps, list) else None
+        row.sleep_need_min = _get(dto, "sleepNeed", "actual")
+        row.sleep_start_ts = _local_dt(dto.get("sleepStartTimestampLocal"))
+        row.sleep_end_ts = _local_dt(dto.get("sleepEndTimestampLocal"))
+        row.restless_moments = sleep.get("restlessMomentsCount")
+        row.body_battery_change = sleep.get("bodyBatteryChange")
+        if dto:
+            detail = (db.get(SleepDetail, (user_id, date))
+                      or SleepDetail(user_id=user_id, date=date))
+            detail.raw = sleep
+            db.merge(detail)
     except GarminConnectTooManyRequestsError:
         raise
     except Exception as e:  # noqa: BLE001

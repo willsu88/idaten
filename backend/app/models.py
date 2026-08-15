@@ -219,6 +219,36 @@ class DailyHealth(Base):
     stress_avg: Mapped[float | None] = mapped_column(Float)
     vo2max: Mapped[float | None] = mapped_column(Float)
     race_predictions: Mapped[Any] = mapped_column(JSON, nullable=True)  # {"time_5k_s": ...}
+    # Sleep breakdown (scalars queried across days; per-night detail is in
+    # sleep_detail.raw — see ADR for the column-vs-raw rule).
+    deep_seconds: Mapped[float | None] = mapped_column(Float)
+    light_seconds: Mapped[float | None] = mapped_column(Float)
+    rem_seconds: Mapped[float | None] = mapped_column(Float)
+    awake_seconds: Mapped[float | None] = mapped_column(Float)
+    awake_count: Mapped[int | None] = mapped_column(Integer)
+    restless_moments: Mapped[int | None] = mapped_column(Integer)
+    avg_sleep_stress: Mapped[float | None] = mapped_column(Float)
+    avg_respiration: Mapped[float | None] = mapped_column(Float)
+    nap_seconds: Mapped[float | None] = mapped_column(Float)
+    nap_count: Mapped[int | None] = mapped_column(Integer)
+    sleep_need_min: Mapped[float | None] = mapped_column(Float)
+    # Local wall-clock bed/wake times (naive; Garmin's *Local epoch already
+    # encodes the wall time when read as UTC).
+    sleep_start_ts: Mapped[dt.datetime | None] = mapped_column(DateTime)
+    sleep_end_ts: Mapped[dt.datetime | None] = mapped_column(DateTime)
+    body_battery_change: Mapped[float | None] = mapped_column(Float)
+
+
+class SleepDetail(Base):
+    """Verbatim Garmin sleep payload for one night (hypnogram, overnight
+    curves, naps, score breakdown). Read one night at a time by the sleep
+    page; anything aggregated across days is promoted to a DailyHealth column."""
+
+    __tablename__ = "sleep_detail"
+
+    user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    date: Mapped[dt.date] = mapped_column(Date, primary_key=True)
+    raw: Mapped[Any] = mapped_column(JSON, nullable=True)
 
 
 class Race(Base):
