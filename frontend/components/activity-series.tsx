@@ -80,8 +80,9 @@ function SeriesChart({
   color,
   colors,
   format,
+  tickFormat,
+  yAxisWidth = 32,
   inverted,
-  unit,
   zones,
 }: {
   data: SeriesPoint[];
@@ -89,14 +90,17 @@ function SeriesChart({
   name: string;
   color: string;
   colors: ChartTheme;
+  /** Unit-bearing value for the tooltip, e.g. "5:00 /km". */
   format: (value: number) => string;
+  /** Bare value for axis ticks — units live in the tooltip, so ticks stay narrow. */
+  tickFormat: (value: number) => string;
+  yAxisWidth?: number;
   inverted?: boolean;
-  unit?: string;
   zones?: NonNullable<ActivitySeries["hr_zones"]> | null;
 }) {
   return (
     <ResponsiveContainer>
-      <ComposedChart data={data} margin={{ top: 5, right: 5, left: -15, bottom: 0 }}>
+      <ComposedChart data={data} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
         <CartesianGrid stroke={colors.grid} strokeDasharray="3 3" vertical={false} />
         <XAxis
           dataKey="t"
@@ -108,10 +112,10 @@ function SeriesChart({
         />
         <YAxis
           {...axisProps(colors)}
+          width={yAxisWidth}
           domain={["auto", "auto"]}
           reversed={inverted}
-          unit={unit}
-          tickFormatter={(v: number) => format(v)}
+          tickFormatter={(v: number) => tickFormat(v)}
         />
         {zones &&
           (Object.keys(ZONE_COLORS) as Array<keyof typeof ZONE_COLORS>).map((z) => (
@@ -277,6 +281,8 @@ export function ActivitySeriesSection({
                 color={colors.blue}
                 colors={colors}
                 format={(v) => `${formatSeconds(v)} /km`}
+                tickFormat={(v) => formatSeconds(v)}
+                yAxisWidth={38}
                 inverted
               />
             </div>
@@ -298,6 +304,7 @@ export function ActivitySeriesSection({
                 color={colors.accent}
                 colors={colors}
                 format={(v) => `${Math.round(v)} bpm`}
+                tickFormat={(v) => `${Math.round(v)}`}
                 zones={data.hr_zones}
               />
             </div>
@@ -321,6 +328,7 @@ export function ActivitySeriesSection({
                     color={colors.teal}
                     colors={colors}
                     format={(v) => `${Math.round(v)} m`}
+                    tickFormat={(v) => `${Math.round(v)}`}
                   />
                 </div>
               </CardContent>
@@ -340,6 +348,7 @@ export function ActivitySeriesSection({
                     color={colors.indigo}
                     colors={colors}
                     format={(v) => `${Math.round(v)} spm`}
+                    tickFormat={(v) => `${Math.round(v)}`}
                   />
                 </div>
               </CardContent>

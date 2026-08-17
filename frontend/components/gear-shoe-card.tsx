@@ -195,8 +195,8 @@ export function GearSuggestionBanner({
 
   const pct = Math.round(suggestion.confidence * 100);
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-accent/30 bg-accent/5 px-4 py-3">
-      <div className="min-w-0 flex-1 text-sm">
+    <div className="flex flex-col gap-2 rounded-2xl border border-accent/30 bg-accent/5 px-4 py-3 sm:flex-row sm:items-center sm:gap-x-3">
+      <div className="min-w-0 text-sm sm:flex-1">
         {!compact && (
           <span className="text-muted-foreground">
             {suggestion.date} · {suggestion.activity_name}:{" "}
@@ -206,15 +206,15 @@ export function GearSuggestionBanner({
         {pct}% of {bucketLabel(suggestion)}, but this one is tagged{" "}
         <span className="font-medium">{suggestion.current.name ?? "no shoe"}</span>.
       </div>
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="flex min-w-0 shrink-0 items-center gap-1.5 self-end sm:self-auto">
         <button
           type="button"
           onClick={accept}
           disabled={busy}
-          className="inline-flex min-h-8 items-center gap-1 rounded-lg bg-accent px-2.5 py-1 text-xs font-semibold text-accent-foreground hover:bg-accent/90 disabled:opacity-50"
+          className="inline-flex min-h-8 min-w-0 items-center gap-1 rounded-lg bg-accent px-2.5 py-1 text-xs font-semibold text-accent-foreground hover:bg-accent/90 disabled:opacity-50"
         >
-          <ArrowRight className="h-3.5 w-3.5" />
-          Switch to {suggestion.suggested.name}
+          <ArrowRight className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">Switch to {suggestion.suggested.name}</span>
         </button>
         <button
           type="button"
