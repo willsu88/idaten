@@ -15,14 +15,10 @@ import {
 import type { TooltipProps } from "recharts";
 import type { Analytics } from "@/lib/types";
 import type { ChartTheme } from "@/components/charts";
+import { rampYMax } from "@/lib/trends";
 import { APP_LOCALE, cn } from "@/lib/utils";
 
 type Ramp = Analytics["ramp"];
-
-// Clamped y domain - ratios beyond this are all "way too much"; keeping the
-// scale fixed makes the bands read the same across athletes and windows.
-const Y_MIN = 0.5;
-const Y_MAX = 2.0;
 
 function shortDate(dateStr: string): string {
   const d = new Date(`${dateStr}T00:00:00`);
@@ -32,17 +28,16 @@ function shortDate(dateStr: string): string {
 type RampDatum = {
   date: string;
   label: string;
-  ratio: number | null; // clamped for plotting - the tooltip shows the raw value
-  raw: number | null;
+  ratio: number | null;
   acute: number;
   chronic: number;
 };
 
 function RampTooltip({ active, payload }: TooltipProps<number, string>) {
   const p = payload?.[0]?.payload as RampDatum | undefined;
-  if (!active || !p || p.raw == null) return null;
+  if (!active || !p || p.ratio == null) return null;
   const rows: Array<[string, string]> = [
-    ["Ratio", p.raw.toFixed(2)],
+    ["Ratio", p.ratio.toFixed(2)],
     ["7-day load", `${Math.round(p.acute)}`],
     ["28-day load", `${Math.round(p.chronic)}`],
   ];
@@ -96,12 +91,15 @@ export function RampChart({ ramp, colors }: { ramp: Ramp | null; colors: ChartTh
       .map((p) => ({
         date: p.date,
         label: shortDate(p.date),
-        ratio: p.ratio == null ? null : Math.min(Y_MAX, Math.max(Y_MIN, p.ratio)),
-        raw: p.ratio,
+        ratio: p.ratio,
         acute: p.acute,
         chronic: p.chronic,
       }));
   }, [ramp]);
+  // Fixed 0..2 scale so the bands read the same across windows, but the axis
+  // grows past 2 when the data does - the plotted line always matches the
+  // tooltip's number.
+  const yMax = rampYMax(ramp?.series ?? []);
 
   if (!ramp || !data.some((p) => p.ratio != null)) {
     return (
@@ -134,18 +132,18 @@ export function RampChart({ ramp, colors }: { ramp: Ramp | null; colors: ChartTh
           fontSize={11}
           tickLine={false}
           axisLine={false}
-          domain={[Y_MIN, Y_MAX]}
+          domain={[0, yMax]}
           tickFormatter={(v: number) => v.toFixed(1)}
         />
-        <ReferenceArea y1={Y_MIN} y2={ramp.caution} fill={colors.areaPos} fillOpacity={0.1} />
-        <ReferenceArea y1={ramp.caution} y2={ramp.high} fill={colors.amber} fillOpacity={0.1} />
-        <ReferenceArea y1={ramp.high} y2={Y_MAX} fill={colors.areaNeg} fillOpacity={0.1} />
+        <ReferenceArea y1={0} y2={ramp.caution} fill={colors.success} fillOpacity={0.08} />
+        <ReferenceArea y1={ramp.caution} y2={ramp.high} fill={colors.warning} fillOpacity={0.1} />
+        <ReferenceArea y1={ramp.high} y2={yMax} fill={colors.danger} fillOpacity={0.1} />
         <ReferenceLine
           y={ramp.caution}
-          stroke={colors.amber}
+          stroke={colors.warning}
           strokeDasharray="6 4"
           label={{
-            value: ramp.caution.toFixed(1),
+            value: "Caution",
             position: "insideTopRight",
             fill: colors.axis,
             fontSize: 11,

@@ -14,23 +14,25 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { ChevronDown } from "lucide-react";
 import type { Analytics, Race, TrendPoint } from "@/lib/types";
 import { api, safe } from "@/lib/api";
+import { aggregateWeeklyDistance, deriveTrendTiles, easySharePct } from "@/lib/trends";
 import { CoachHint } from "@/components/coach-hint";
 import { PageHeader } from "@/components/page-header";
 import { ChartTooltip, useChartTheme } from "@/components/charts";
 import { MetricInfo } from "@/components/metric-info";
+import { StatTile } from "@/components/stat-tile";
 import { RampChart, RampStatusChip } from "@/components/ramp-chart";
 import {
   AcwrChart,
+  EasyHardChart,
   EfChart,
-  EfLegend,
   HrDriftChart,
   RaceOutlookCard,
   RestingHrChart,
   Vo2maxChart,
   ZonesWeeklyChart,
-  easySharePct,
 } from "@/components/analytics-charts";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -58,34 +60,6 @@ type SectionId = (typeof SECTIONS)[number]["id"];
 function shortDate(dateStr: string): string {
   const d = new Date(`${dateStr}T00:00:00`);
   return d.toLocaleDateString(APP_LOCALE, { month: "short", day: "numeric" });
-}
-
-/** ISO week key like "2026-W29" and its Monday date for labeling. */
-function isoWeekOf(dateStr: string): { key: string; monday: string } {
-  const d = new Date(`${dateStr}T00:00:00`);
-  const day = (d.getDay() + 6) % 7; // Mon = 0
-  const monday = new Date(d);
-  monday.setDate(d.getDate() - day);
-  const thursday = new Date(monday);
-  thursday.setDate(monday.getDate() + 3);
-  const yearStart = new Date(thursday.getFullYear(), 0, 1);
-  const week = Math.ceil(((thursday.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-  const mondayStr = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, "0")}-${String(monday.getDate()).padStart(2, "0")}`;
-  return { key: `${thursday.getFullYear()}-W${String(week).padStart(2, "0")}`, monday: mondayStr };
-}
-
-function aggregateWeeklyDistance(daily: TrendPoint[]) {
-  const weeks = new Map<string, { week: string; monday: string; distance_km: number }>();
-  for (const p of daily) {
-    if (p.distance_km == null) continue;
-    const { key, monday } = isoWeekOf(p.date);
-    const entry = weeks.get(key) ?? { week: key, monday, distance_km: 0 };
-    entry.distance_km += p.distance_km;
-    weeks.set(key, entry);
-  }
-  return Array.from(weeks.values())
-    .sort((a, b) => a.monday.localeCompare(b.monday))
-    .map((w) => ({ ...w, distance_km: Math.round(w.distance_km * 10) / 10 }));
 }
 
 function ChartCard({
@@ -126,6 +100,28 @@ function SectionHeading({ id, title }: { id: SectionId; title: string }) {
     >
       {title}
     </h2>
+  );
+}
+
+/**
+ * Per-section disclosure for the deep-dive charts. Children only mount when
+ * opened, so a closed section costs nothing and recharts always measures a
+ * visible container.
+ */
+function MoreCharts({ count, children }: { count: number; children: React.ReactNode }) {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex min-h-9 items-center gap-1.5 rounded-full border border-border bg-card px-4 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ChevronDown className={cn("h-4 w-4 transition-transform", open && "rotate-180")} />
+        {open ? "Hide detail charts" : `More charts (${count})`}
+      </button>
+      {open && <div className="mt-5 space-y-5">{children}</div>}
+    </div>
   );
 }
 
@@ -223,6 +219,7 @@ export default function TrendsPage() {
     [isDaily, analytics],
   );
   const easyShare = React.useMemo(() => easySharePct(zoneBuckets), [zoneBuckets]);
+  const tiles = React.useMemo(() => deriveTrendTiles(daily ?? [], analytics), [daily, analytics]);
   const hasData = data.length > 0;
 
   // Scroll spy: highlight the pill of the section currently in view.
@@ -284,6 +281,22 @@ export default function TrendsPage() {
         </Card>
       ) : (
         <>
+          {/* The glanceable tier: four verdicts before any chart. */}
+          <div className="mb-5 grid grid-cols-2 gap-2 lg:grid-cols-4">
+            {tiles.map((t) => (
+              <StatTile
+                key={t.key}
+                label={t.label}
+                value={t.value}
+                sub={t.sub}
+                tone={t.tone}
+                direction={t.direction}
+                spark={t.spark}
+                href={t.key === "sleep" ? "/sleep" : undefined}
+              />
+            ))}
+          </div>
+
           <SectionPills active={activeSection} />
 
           <div className="space-y-5">
@@ -320,88 +333,31 @@ export default function TrendsPage() {
               </ResponsiveContainer>
             </ChartCard>
 
-            <ChartCard title="Sleep" description="Hours per night with Garmin sleep score">
-              <ResponsiveContainer>
-                <ComposedChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                  <CartesianGrid stroke={colors.grid} strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="label" {...axisProps} minTickGap={32} />
-                  <YAxis yAxisId="hours" {...axisProps} domain={[0, "auto"]} unit="h" />
-                  <YAxis yAxisId="score" orientation="right" {...axisProps} domain={[0, 100]} hide />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar
-                    yAxisId="hours"
-                    dataKey="sleep_hours"
-                    name="Hours"
-                    fill={colors.indigo}
-                    opacity={0.75}
-                    radius={[3, 3, 0, 0]}
-                  />
-                  <Line
-                    yAxisId="score"
-                    type="monotone"
-                    dataKey="sleep_score"
-                    name="Score"
-                    stroke={colors.amber}
-                    dot={false}
-                    strokeWidth={2}
-                    connectNulls
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </ChartCard>
+            <MoreCharts count={2}>
+              <ChartCard title="Sleep" description="Hours per night — score and stages live on the Sleep page">
+                <ResponsiveContainer>
+                  <ComposedChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                    <CartesianGrid stroke={colors.grid} strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="label" {...axisProps} minTickGap={32} />
+                    <YAxis {...axisProps} domain={[0, "auto"]} unit="h" />
+                    <Tooltip content={<ChartTooltip />} />
+                    <Bar
+                      dataKey="sleep_hours"
+                      name="Hours"
+                      fill={colors.indigo}
+                      opacity={0.75}
+                      radius={[3, 3, 0, 0]}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </ChartCard>
 
-            <ChartCard title="Resting HR" description="Morning resting heart rate">
-              <RestingHrChart data={data} colors={colors} />
-            </ChartCard>
+              <ChartCard title="Resting HR" description="Morning resting heart rate">
+                <RestingHrChart data={data} colors={colors} />
+              </ChartCard>
+            </MoreCharts>
 
             <SectionHeading id="training-load" title="Training load" />
-
-            <ChartCard
-              title="Training load"
-              description="Daily load with fitness (CTL) and fatigue (ATL)"
-              info={
-                <span className="inline-flex items-center gap-3">
-                  <MetricInfo id="ctl" label="CTL" />
-                  <MetricInfo id="atl" label="ATL" />
-                </span>
-              }
-            >
-              <ResponsiveContainer>
-                <ComposedChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                  <CartesianGrid stroke={colors.grid} strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="label" {...axisProps} minTickGap={32} />
-                  <YAxis {...axisProps} />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar
-                    dataKey="training_load"
-                    name="Load"
-                    fill={colors.muted}
-                    opacity={0.5}
-                    radius={[3, 3, 0, 0]}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="ctl"
-                    name="CTL"
-                    stroke={colors.blue}
-                    dot={false}
-                    strokeWidth={2}
-                    connectNulls
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="atl"
-                    name="ATL"
-                    stroke={colors.accent}
-                    dot={false}
-                    strokeWidth={2}
-                    connectNulls
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </ChartCard>
 
             <ChartCard
               title="Form (TSB)"
@@ -429,95 +385,162 @@ export default function TrendsPage() {
               </ResponsiveContainer>
             </ChartCard>
 
-            <ChartCard
-              title="ACWR"
-              description="Acute:chronic workload ratio — 0.8 to 1.3 is the safe zone"
-              info={<MetricInfo id="acwr" />}
-            >
-              <AcwrChart data={data} colors={colors} />
-            </ChartCard>
+            <MoreCharts count={7}>
+              <ChartCard
+                title="Fitness & fatigue"
+                description="Long-term fitness (CTL) vs short-term fatigue (ATL)"
+                info={
+                  <span className="inline-flex items-center gap-3">
+                    <MetricInfo id="ctl" label="CTL" />
+                    <MetricInfo id="atl" label="ATL" />
+                  </span>
+                }
+              >
+                <ResponsiveContainer>
+                  <ComposedChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                    <CartesianGrid stroke={colors.grid} strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="label" {...axisProps} minTickGap={32} />
+                    <YAxis {...axisProps} />
+                    <Tooltip content={<ChartTooltip />} />
+                    <Legend iconType="plainline" wrapperStyle={{ fontSize: 12 }} />
+                    <Line
+                      type="monotone"
+                      dataKey="ctl"
+                      name="CTL"
+                      stroke={colors.blue}
+                      dot={false}
+                      strokeWidth={2}
+                      connectNulls
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="atl"
+                      name="ATL"
+                      stroke={colors.accent}
+                      dot={false}
+                      strokeWidth={2}
+                      connectNulls
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </ChartCard>
 
-            <ChartCard
-              title="Load ramp"
-              description={`How fast your training load is growing vs what your body is used to. Staying under ${analytics?.ramp.caution ?? 1.3} is a sustainable build; above ${analytics?.ramp.high ?? 1.5} is injury territory.`}
-              info={
-                <span className="inline-flex items-center gap-2">
-                  <MetricInfo id="ramp" />
-                  <RampStatusChip ramp={analytics?.ramp ?? null} />
-                </span>
-              }
-            >
-              <RampChart ramp={analytics?.ramp ?? null} colors={colors} />
-            </ChartCard>
+              <ChartCard title="Daily load" description="Training load per day">
+                <ResponsiveContainer>
+                  <ComposedChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                    <CartesianGrid stroke={colors.grid} strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="label" {...axisProps} minTickGap={32} />
+                    <YAxis {...axisProps} />
+                    <Tooltip content={<ChartTooltip formatter={(v) => String(Math.round(v))} />} />
+                    <Bar
+                      dataKey="training_load"
+                      name="Load"
+                      fill={colors.indigo}
+                      opacity={0.6}
+                      radius={[3, 3, 0, 0]}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </ChartCard>
 
-            <ChartCard
-              title={isDaily ? "Daily distance" : "Weekly distance"}
-              description={isDaily ? "Kilometers per day" : "Kilometers per ISO week"}
-            >
-              <ResponsiveContainer>
-                <ComposedChart data={distanceBars} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                  <CartesianGrid stroke={colors.grid} strokeDasharray="3 3" vertical={false} />
-                  <XAxis
-                    dataKey="start"
-                    {...axisProps}
-                    minTickGap={24}
-                    tickFormatter={(v: string) => shortDate(v)}
-                  />
-                  <YAxis {...axisProps} unit=" km" />
-                  <Tooltip
-                    content={<ChartTooltip formatter={(v) => `${v.toFixed(1)} km`} />}
-                  />
-                  <Bar
-                    dataKey="distance_km"
-                    name="Distance"
-                    fill={colors.accent}
-                    radius={[4, 4, 0, 0]}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </ChartCard>
+              <ChartCard
+                title="ACWR"
+                description="Acute:chronic workload ratio — 0.8 to 1.3 is the safe zone"
+                info={<MetricInfo id="acwr" />}
+              >
+                <AcwrChart data={data} colors={colors} />
+              </ChartCard>
 
-            <ChartCard
-              title="Time in zones"
-              description={isDaily ? "Daily time per heart-rate zone" : "Weekly time per heart-rate zone"}
-              footer={
-                easyShare != null ? (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    <span className="font-semibold text-foreground">{easyShare}%</span> of your time
-                    is easy (Z1+Z2). Polarized training aims for roughly 80/20 easy vs hard.
-                  </p>
-                ) : undefined
-              }
-            >
-              <ZonesWeeklyChart buckets={zoneBuckets} colors={colors} />
-            </ChartCard>
+              <ChartCard
+                title="Load ramp"
+                description={`How fast your training load is growing vs what your body is used to. Staying under ${analytics?.ramp.caution ?? 1.3} is a sustainable build; above ${analytics?.ramp.high ?? 1.5} is injury territory.`}
+                info={
+                  <span className="inline-flex items-center gap-2">
+                    <MetricInfo id="ramp" />
+                    <RampStatusChip ramp={analytics?.ramp ?? null} />
+                  </span>
+                }
+              >
+                <RampChart ramp={analytics?.ramp ?? null} colors={colors} />
+              </ChartCard>
+
+              <ChartCard
+                title={isDaily ? "Daily distance" : "Weekly distance"}
+                description={isDaily ? "Kilometers per day" : "Kilometers per ISO week"}
+              >
+                <ResponsiveContainer>
+                  <ComposedChart data={distanceBars} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                    <CartesianGrid stroke={colors.grid} strokeDasharray="3 3" vertical={false} />
+                    <XAxis
+                      dataKey="start"
+                      {...axisProps}
+                      minTickGap={24}
+                      tickFormatter={(v: string) => shortDate(v)}
+                    />
+                    <YAxis {...axisProps} unit=" km" />
+                    <Tooltip
+                      content={<ChartTooltip formatter={(v) => `${v.toFixed(1)} km`} />}
+                    />
+                    <Bar
+                      dataKey="distance_km"
+                      name="Distance"
+                      fill={colors.accent}
+                      radius={[4, 4, 0, 0]}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </ChartCard>
+
+              <ChartCard
+                title="Easy vs hard"
+                description={`Share of ${isDaily ? "daily" : "weekly"} time in easy zones (Z1+Z2) — polarized training aims for roughly 80/20`}
+                footer={
+                  easyShare != null ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      <span className="font-semibold text-foreground">{easyShare}%</span> of your
+                      time in this range is easy.
+                    </p>
+                  ) : undefined
+                }
+              >
+                <EasyHardChart buckets={zoneBuckets} colors={colors} />
+              </ChartCard>
+
+              <ChartCard
+                title="Time in zones"
+                description={isDaily ? "Daily time per heart-rate zone" : "Weekly time per heart-rate zone"}
+              >
+                <ZonesWeeklyChart buckets={zoneBuckets} colors={colors} />
+              </ChartCard>
+            </MoreCharts>
 
             <SectionHeading id="progress" title="Progress" />
 
             <ChartCard
               title="Aerobic efficiency"
-              description="Efficiency factor per easy run, colored by temperature, with a rolling average"
+              description="Efficiency factor per easy run, with the rolling average as the trend"
               info={<MetricInfo id="ef" />}
-              footer={<EfLegend />}
             >
               <EfChart points={analytics?.ef_series ?? []} colors={colors} />
             </ChartCard>
 
-            <ChartCard
-              title="HR drift"
-              description="Aerobic decoupling per run — under 5% means your aerobic base is holding up"
-              info={<MetricInfo id="hr_drift" />}
-            >
-              <HrDriftChart points={analytics?.ef_series ?? []} colors={colors} />
-            </ChartCard>
+            <MoreCharts count={2}>
+              <ChartCard
+                title="HR drift"
+                description="Aerobic decoupling per run — under 5% means your aerobic base is holding up"
+                info={<MetricInfo id="hr_drift" />}
+              >
+                <HrDriftChart points={analytics?.ef_series ?? []} colors={colors} />
+              </ChartCard>
 
-            <ChartCard
-              title="VO2max"
-              description="Estimated VO2max over time"
-              info={<MetricInfo id="vo2max" />}
-            >
-              <Vo2maxChart points={analytics?.vo2max_series ?? []} colors={colors} />
-            </ChartCard>
+              <ChartCard
+                title="VO2max"
+                description="Estimated VO2max over time"
+                info={<MetricInfo id="vo2max" />}
+              >
+                <Vo2maxChart points={analytics?.vo2max_series ?? []} colors={colors} />
+              </ChartCard>
+            </MoreCharts>
 
             {races.length > 0 && <RaceOutlookCard races={races} />}
           </div>

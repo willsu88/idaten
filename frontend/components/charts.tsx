@@ -15,6 +15,11 @@ export interface ChartTheme {
   muted: string;
   areaPos: string;
   areaNeg: string;
+  // Status colors: green/amber/red carry verdicts (bands, thresholds, tiles),
+  // never series identity - the hues above stay decorative.
+  success: string;
+  warning: string;
+  danger: string;
 }
 
 const LIGHT: ChartTheme = {
@@ -28,6 +33,9 @@ const LIGHT: ChartTheme = {
   muted: "#a1a1aa",
   areaPos: "#059669",
   areaNeg: "#dc2626",
+  success: "#059669",
+  warning: "#d97706",
+  danger: "#dc2626",
 };
 
 const DARK: ChartTheme = {
@@ -41,6 +49,9 @@ const DARK: ChartTheme = {
   muted: "#52525b",
   areaPos: "#34d399",
   areaNeg: "#f87171",
+  success: "#34d399",
+  warning: "#fbbf24",
+  danger: "#f87171",
 };
 
 export function useChartTheme(): ChartTheme {

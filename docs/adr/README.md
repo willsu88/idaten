@@ -26,3 +26,4 @@ Each records the context, the options weighed, and why the chosen one won - so t
 - [0021](0021-terrain-is-a-step-property.md) - Terrain is a step property; uphill work is prescribed by effort and verified after the fact
 - [0022](0022-shared-workouts-cross-tenant-snapshots.md) - A shared workout is a cross-tenant snapshot, adapted deterministically and accepted as an override
 - [0023](0023-sleep-scalars-are-columns-detail-is-raw.md) - Sleep data queried across days becomes daily_health columns; the per-night payload is archived verbatim
+- [0024](0024-trends-is-tiered-status-colors-are-semantic.md) - Trends is tiered (tiles, hero charts, disclosure) and green/amber/red carry verdicts only

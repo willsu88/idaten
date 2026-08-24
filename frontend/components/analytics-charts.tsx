@@ -4,7 +4,6 @@ import * as React from "react";
 import {
   Bar,
   CartesianGrid,
-  Cell,
   ComposedChart,
   Legend,
   Line,
@@ -20,6 +19,7 @@ import type { TooltipProps } from "recharts";
 import type { EfPoint, Race, TrendPoint, ZonesBucket } from "@/lib/types";
 import type { ChartTheme } from "@/components/charts";
 import { ChartTooltip } from "@/components/charts";
+import { easyHardWeekly } from "@/lib/trends";
 import {
   countdownLabel,
   distanceLabel,
@@ -54,18 +54,6 @@ function EmptyNote({ children }: { children: React.ReactNode }) {
 
 const axisProps = (colors: ChartTheme) =>
   ({ stroke: colors.axis, fontSize: 11, tickLine: false, axisLine: false }) as const;
-
-// Continuous cool-blue -> hot-red temperature scale (5°C..30°C), gray when unknown.
-const TEMP_COLD: [number, number, number] = [56, 132, 244]; // blue
-const TEMP_HOT: [number, number, number] = [239, 68, 68]; // red
-const TEMP_UNKNOWN = "#9ca3af";
-
-export function tempColor(temp: number | null): string {
-  if (temp == null) return TEMP_UNKNOWN;
-  const t = Math.min(1, Math.max(0, (temp - 5) / 25));
-  const c = TEMP_COLD.map((lo, i) => Math.round(lo + (TEMP_HOT[i] - lo) * t));
-  return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
-}
 
 type EfDatum = EfPoint & { label: string; roll: number | null };
 
@@ -113,40 +101,21 @@ export function EfChart({ points, colors }: { points: EfPoint[]; colors: ChartTh
         <XAxis dataKey="label" {...axisProps(colors)} minTickGap={32} />
         <YAxis {...axisProps(colors)} domain={["auto", "auto"]} tickFormatter={(v: number) => v.toFixed(2)} />
         <Tooltip content={<EfTooltip />} />
+        {/* The trend is the signal; individual runs are context. Per-run detail
+            (pace, HR, temperature) lives in the tooltip. */}
+        <Scatter dataKey="ef" name="EF" fill={colors.blue} fillOpacity={0.45} />
         <Line
           type="monotone"
           dataKey="roll"
           name="Rolling avg"
-          stroke={colors.muted}
-          strokeWidth={2}
+          stroke={colors.accent}
+          strokeWidth={2.5}
           dot={false}
           legendType="none"
           tooltipType="none"
         />
-        <Scatter dataKey="ef" name="EF">
-          {data.map((p) => (
-            <Cell key={p.activity_id} fill={tempColor(p.temperature_c)} />
-          ))}
-        </Scatter>
       </ComposedChart>
     </ResponsiveContainer>
-  );
-}
-
-export function EfLegend() {
-  return (
-    <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-      <span>Cold</span>
-      <span
-        className="h-1.5 w-24 rounded-full"
-        style={{ background: `linear-gradient(to right, ${tempColor(5)}, ${tempColor(17.5)}, ${tempColor(30)})` }}
-      />
-      <span>Hot</span>
-      <span className="ml-3 inline-flex items-center gap-1.5">
-        <span className="h-2 w-2 rounded-full" style={{ background: TEMP_UNKNOWN }} />
-        No temperature
-      </span>
-    </div>
   );
 }
 
@@ -510,20 +479,50 @@ const ZONES = [
   { key: "z5_h", name: "Z5", color: ZONE_COLORS.z5 },
 ] as const;
 
-export function easySharePct(buckets: ZonesBucket[]): number | null {
-  let easy = 0;
-  let total = 0;
-  for (const b of buckets) {
-    easy += b.z1_s + b.z2_s;
-    total += b.z1_s + b.z2_s + b.z3_s + b.z4_s + b.z5_s;
-  }
-  if (total === 0) return null;
-  return Math.round((easy / total) * 100);
-}
-
 // Buckets are weekly (long ranges) or daily (7-day view); each carries a `start`
 // ISO date used as the x-axis label.
 export type ZonesBar = ZonesBucket & { start: string };
+
+/**
+ * The glanceable version of zone distribution: easy (Z1+Z2) share per bucket
+ * against the 80% polarized-training target. Hours per side live in the tooltip.
+ */
+export function EasyHardChart({ buckets, colors }: { buckets: ZonesBar[]; colors: ChartTheme }) {
+  const data = React.useMemo(
+    () =>
+      easyHardWeekly(buckets)
+        .filter((b) => b.easyPct != null)
+        .map((b) => ({ ...b, label: shortDate(b.start) })),
+    [buckets],
+  );
+  if (data.length === 0) return <EmptyNote>No zone data yet.</EmptyNote>;
+  return (
+    <ResponsiveContainer>
+      <ComposedChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+        <CartesianGrid stroke={colors.grid} strokeDasharray="3 3" vertical={false} />
+        <XAxis dataKey="label" {...axisProps(colors)} minTickGap={24} />
+        <YAxis {...axisProps(colors)} domain={[0, 100]} unit="%" />
+        <ReferenceLine
+          y={80}
+          stroke={colors.success}
+          strokeDasharray="6 4"
+          label={{ value: "80% target", position: "insideTopRight", fill: colors.axis, fontSize: 11 }}
+        />
+        <Tooltip
+          content={
+            <ChartTooltip
+              formatter={(v, name) => (name === "Easy share" ? `${Math.round(v)}%` : `${v.toFixed(1)} h`)}
+            />
+          }
+        />
+        <Bar dataKey="easyPct" name="Easy share" fill={colors.blue} opacity={0.75} radius={[3, 3, 0, 0]} />
+        {/* Hidden series so the tooltip carries the hours behind the share. */}
+        <Line dataKey="easy_h" name="Easy" stroke="none" dot={false} legendType="none" />
+        <Line dataKey="hard_h" name="Hard" stroke="none" dot={false} legendType="none" />
+      </ComposedChart>
+    </ResponsiveContainer>
+  );
+}
 
 export function ZonesWeeklyChart({ buckets, colors }: { buckets: ZonesBar[]; colors: ChartTheme }) {
   const data = React.useMemo(
