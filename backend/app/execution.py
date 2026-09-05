@@ -37,7 +37,8 @@ log = logging.getLogger(__name__)
 
 
 def _step_segment(hr_low, hr_high, pace, dur_min, dist_km, label,
-                  zones=None, quality=False, terrain="flat") -> dict | None:
+                  zones=None, quality=False, terrain="flat",
+                  run_speed_mps=None) -> dict | None:
     """One prescription step -> a scoring segment ({axis, low, high, duration_s}).
 
     Legacy days may still carry a degenerate stored band (ADR 0017 predates
@@ -47,6 +48,12 @@ def _step_segment(hr_low, hr_high, pace, dur_min, dist_km, label,
     if hr_low and hr_high:
         hr_low, hr_high = metrics.ensure_hr_band(hr_low, hr_high, zones, quality)
         axis, low, high = "hr", float(hr_low), float(hr_high)
+        # A distance-prescribed HR step ("10 km in z2") has no prescribed clock
+        # of its own and no pace band to derive one from; the athlete's own
+        # average speed converts the distance to time. Without it the step is
+        # unscoreable, which silently unscored every distance-only HR day.
+        if not dur and dist_km and run_speed_mps:
+            dur = float(dist_km) * 1000 / run_speed_mps
     elif terrain == "uphill":
         # Uphill pace is the gradient, not the effort. A climb held at exactly
         # the right effort misses a flat-ground band by a wide margin, so
@@ -73,7 +80,18 @@ def _step_segment(hr_low, hr_high, pace, dur_min, dist_km, label,
     return {"axis": axis, "low": low, "high": high, "duration_s": dur, "label": label}
 
 
-def _idaten_segments(day: PlanDay, zones: dict | None) -> list[dict]:
+def _run_speed(a: Activity) -> float | None:
+    """The run's average speed (m/s), for converting a distance-prescribed step
+    into scoring time when the prescription carries no clock of its own."""
+    if a.avg_speed_mps:
+        return a.avg_speed_mps
+    if a.distance_m and a.duration_s:
+        return a.distance_m / a.duration_s
+    return None
+
+
+def _idaten_segments(day: PlanDay, zones: dict | None,
+                     run_speed_mps: float | None = None) -> list[dict]:
     """Segments from an Idaten-authored prescription (structured or simple)."""
     segs: list[dict] = []
     quality = day.workout_type in QUALITY_TYPES
@@ -86,13 +104,13 @@ def _idaten_segments(day: PlanDay, zones: dict | None) -> list[dict]:
                                         s.get("target_pace"), s.get("duration_min"),
                                         s.get("distance_km"), kind,
                                         zones, quality and kind == "work",
-                                        metrics.step_terrain(s))
+                                        metrics.step_terrain(s), run_speed_mps)
                     if seg:
                         segs.append(seg)
     else:
         seg = _step_segment(day.target_hr_low, day.target_hr_high, day.target_pace,
                             day.duration_min, day.distance_km, day.workout_type,
-                            zones, quality)
+                            zones, quality, run_speed_mps=run_speed_mps)
         if seg:
             segs.append(seg)
     return segs
@@ -330,7 +348,7 @@ def score_run(db: Session, a: Activity, full: dict | None,
         prescription = (_plan_day_prescription(day) if is_idaten_pushed
                         else _coach_prescription(executed, a, te))
         return ScoreResult(int(gscore), "garmin", None, prescription, mismatch, hill)
-    segs = (_idaten_segments(day, zones) if prefer_idaten
+    segs = (_idaten_segments(day, zones, _run_speed(a)) if prefer_idaten
             else _coach_segments(a.splits, te, zones, a))
     out = execution_score(a.series, segs)
     if not out:
@@ -397,7 +415,7 @@ def score_confirmed(db: Session, a: Activity,
     if not pw:
         return None, None, None
     is_idaten = pw["source"] == "idaten"
-    segs = (_idaten_segments(pw["day"], zones) if is_idaten
+    segs = (_idaten_segments(pw["day"], zones, _run_speed(a)) if is_idaten
             else _coach_segments(a.splits, pw.get("te"), zones, a))
     out = execution_score(a.series, segs)
     if not out:

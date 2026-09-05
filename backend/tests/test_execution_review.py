@@ -113,6 +113,20 @@ def test_score_confirmed_against_idaten_planday(db, user):
     assert hill is None  # the day prescribed no uphill work
 
 
+def test_score_confirmed_distance_only_hr_day(db, user):
+    # A distance-prescribed HR day carries no duration; the athlete's own pace
+    # supplies the clock. Regression: this returned None (segments were empty),
+    # silently swallowing the athlete's "yes, this was my planned run".
+    db.add(PlanDay(user_id=user.id, date=TODAY, workout_type="long_run",
+                   title="Relaxed 5K", distance_km=5.0, target_hr_low=144,
+                   target_hr_high=161))
+    db.commit()
+    a = _run(db, user.id, 1, TODAY)  # 5000 m in 1200 s, HR 150 throughout
+    score, breakdown, hill = execution.score_confirmed(db, a, ZONES)
+    assert score == 100 and breakdown
+    assert hill is None
+
+
 # --- Phase 3: endpoint ----------------------------------------------------
 
 def _login(client):
