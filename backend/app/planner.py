@@ -96,7 +96,7 @@ PLAN_SCHEMA: dict = {
                     "target_pace": {
                         "type": ["string", "null"],
                         "description": "min/km, either 'M:SS' (e.g. 5:30) or the band "
-                                       "'M:SS-M:SS' slower-faster (e.g. 6:50-7:05). No "
+                                       "'M:SS-M:SS' slower-faster (e.g. 7:05-6:50). No "
                                        "units, no words. Null for rest/cross-train.",
                     },
                     "target_hr_low": {
@@ -217,7 +217,10 @@ bpm bands anchored on their lactate threshold HR):
   slice of it; never emit a band narrower than {metrics.MIN_HR_BAND_WIDTH} bpm (widen it symmetrically
   beyond the zone edges if the zone itself is narrower).
 - "hybrid": HR bands for easy/recovery/long runs (target_pace null), pace for
-  tempo/intervals/race (HR null). One target type per day, never both.
+  tempo/intervals/race (HR null). Every target - the day-level one and every
+  individual step - carries exactly ONE axis, pace or HR, never both. Steps
+  within one workout may differ (easy warmup/recovery/cooldown steps on HR
+  while the work steps take pace is the normal hybrid quality day).
 If hr_zones is null (no LTHR yet), fall back to pace targets in every mode.
 An UPHILL step is the one exception, in every training_mode: it always carries
 an HR band and target_pace null. Uphill pace is a function of the gradient, not
@@ -814,6 +817,12 @@ def apply_plan_days(
                 "steps": None,
                 "rationale": f"Reserved for {intent.sport} (your day intent).",
             }
+        # Fully timed steps ARE the duration; normalized before _day_changed so
+        # a re-applied identical plan never reads as changed against the
+        # derived value it produced (that would clear pushed_at nightly).
+        derived = _steps_total_min(d.get("steps"))
+        if derived is not None and derived != d.get("duration_min"):
+            d = {**d, "duration_min": derived}
         materially_changed = _day_changed(existing, d)
         row = existing or PlanDay(user_id=user_id, date=date)
         row.workout_type = d["workout_type"]
@@ -833,6 +842,25 @@ def apply_plan_days(
         db.add(row)
     db.commit()
     return changed
+
+
+def _steps_total_min(steps: list[dict] | None) -> float | None:
+    """The day's duration as its steps add up, repeats expanded - or None when
+    any step has no clock of its own (distance-only, lap-button).
+
+    The model authors `duration_min` and `steps` as independent fields and
+    routinely lets them drift ("30 min" over 28 min of steps); the steps are
+    the workout, so when they are fully timed they are the duration. A partly
+    timed session can only be undercounted by summing, so the model's
+    whole-workout estimate stands there.
+    """
+    total = 0.0
+    for block in steps or []:
+        for s in block.get("steps") or []:
+            if s.get("duration_min") is None:
+                return None
+            total += float(s["duration_min"]) * int(block.get("repeat") or 1)
+    return total or None
 
 
 QUALITY_TYPES = {"tempo", "intervals", "race"}
@@ -948,6 +976,32 @@ def terrain_target_violations(days: list[dict]) -> list[str]:
                 f"step has target_pace {s.get('target_pace')!r} - uphill pace is "
                 "the gradient, not the effort. Prescribe the HR band for that "
                 "effort and set target_pace null")
+    return out
+
+
+def dual_target_violations(days: list[dict]) -> list[str]:
+    """Deterministic guard (ADR 0025): a target - day-level or any step -
+    carries exactly one axis, pace OR an HR band, never both.
+
+    A dual-target step splits the truth: the UI displays the pace band while
+    the execution score would judge the HR band, so the athlete is graded on a
+    target they were never shown. The hybrid-mode rules alone push the model
+    the wrong way here - easy segments of a quality day read as "HR" while the
+    day reads as "pace" - so this guard is what actually holds the invariant.
+    A lone HR bound is not a band; the HR-band guard owns that failure mode.
+    """
+    out: list[str] = []
+    for d in days:
+        targets = [(d.get("target_pace"), d.get("target_hr_low"),
+                    d.get("target_hr_high"), "day")]
+        targets += [(s.get("target_pace"), s.get("target_hr_low"),
+                     s.get("target_hr_high"), where) for s, where in _iter_steps(d)]
+        for pace, low, high, where in targets:
+            if pace and low and high:
+                out.append(
+                    f"{d.get('date')} ({d.get('workout_type')}, {where}): carries "
+                    f"both target_pace {pace!r} and HR band {low}-{high} - "
+                    "prescribe exactly one axis and null the other")
     return out
 
 
@@ -1122,6 +1176,32 @@ def generate_plan(db: Session, user_id: int, source: str = "daily_job") -> list[
         days = [d for d in result.get("days", []) if d.get("date")]
         for v in terrain_target_violations(days):
             log.warning("plan terrain guard STILL violated (user %s): %s", user_id, v)
+    # Dual-target guard (ADR 0025): same corrective-retry pattern. If the model
+    # still emits both axes, the mechanical clamp keeps the displayed pace so a
+    # dual target can never reach the DB and split display from scoring.
+    dual_violations = dual_target_violations(days)
+    if dual_violations:
+        log.warning("plan dual-target guard (user %s), retrying once: %s",
+                    user_id, dual_violations)
+        result = client.complete_structured(
+            system=system,
+            messages=messages + [
+                {"role": "assistant", "content": json.dumps(result)},
+                {"role": "user", "content":
+                    "These targets carry both a pace and an HR band:\n- "
+                    + "\n- ".join(dual_violations)
+                    + "\nRevise the plan so every target (day-level and every "
+                      "step) prescribes exactly one axis - pace OR an HR band - "
+                      "and nulls the other."},
+            ],
+            schema=PLAN_SCHEMA,
+            name="training_plan",
+        )
+        days = [d for d in result.get("days", []) if d.get("date")]
+        for v in dual_target_violations(days):
+            log.warning("plan dual-target guard STILL violated (user %s): %s",
+                        user_id, v)
+        days = [_drop_dual_targets(d) for d in days]
     chronic = (snapshot.get("load_ramp") or {}).get("chronic_daily_load")
     for warning in check_week(days, snapshot["quality_budget"], chronic,
                               hr_zones=snapshot.get("hr_zones")):
@@ -1506,6 +1586,9 @@ def create_pending_edit(
     # an uphill step that arrived with a pace target has it dropped here rather
     # than reaching the watch as a band no one can hold on a climb.
     days = [_drop_uphill_pace(d) for d in days]
+    # Dual-target repair (ADR 0025), after the uphill drop so a dual-target
+    # uphill step correctly resolves to its HR band, not its pace.
+    days = [_drop_dual_targets(d) for d in days]
     current: list[dict | None] = []
     for d in days:
         try:
@@ -1526,6 +1609,29 @@ def create_pending_edit(
     db.add(edit)
     db.commit()
     return edit, None
+
+
+def _drop_dual_targets(d: dict) -> dict:
+    """A copy of day `d` with the HR band cleared wherever a target (day-level
+    or step) also carries a pace - the mechanical ADR 0025 repair.
+
+    Pace survives because pace is what the UI displays and the watch enforces
+    when both are present; dropping it instead would grade the athlete on a
+    band they never saw. Runs after `_drop_uphill_pace`, so an uphill step has
+    already resolved to HR-only before this looks at it.
+    """
+    def fix(t: dict) -> dict:
+        if t.get("target_pace") and t.get("target_hr_low") and t.get("target_hr_high"):
+            return {**t, "target_hr_low": None, "target_hr_high": None}
+        return t
+
+    out = fix(d)
+    if d.get("steps"):
+        out = {**out, "steps": [
+            {**block, "steps": [fix(s) for s in (block.get("steps") or [])]}
+            for block in d["steps"]
+        ]}
+    return out
 
 
 def _drop_uphill_pace(d: dict) -> dict:

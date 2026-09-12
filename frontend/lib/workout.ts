@@ -71,13 +71,30 @@ export const WORKOUT_PURPOSE: Record<WorkoutType, string> = {
 };
 
 /**
+ * Display form of a stored pace target. Storage is "slower-faster" (ADR 0020),
+ * but readers scan a range low-to-high, so a band always renders faster-first
+ * ("8:05–9:29") — the same order and dash as the execution-score table. Single
+ * paces and anything unparseable pass through untouched.
+ */
+export function formatPaceBand(pace: string): string {
+  const parts = pace.split("-").map((p) => p.trim());
+  if (parts.length !== 2) return pace;
+  const secs = parts.map((p) => {
+    const m = /^(\d+):([0-5]\d)$/.exec(p);
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+  });
+  if (secs[0] == null || secs[1] == null) return pace;
+  return secs[0] <= secs[1] ? `${parts[0]}–${parts[1]}` : `${parts[1]}–${parts[0]}`;
+}
+
+/**
  * Intensity target of a plan day: pace ("@ 5:30 /km") or, when pace is null,
  * the HR band ("HR 140–155"). A day has pace OR an HR band, never both.
  */
 export function workoutTargetLabel(
   workout: Pick<PlanDay, "target_pace" | "target_hr_low" | "target_hr_high">,
 ): string | null {
-  if (workout.target_pace) return `@ ${workout.target_pace} /km`;
+  if (workout.target_pace) return `@ ${formatPaceBand(workout.target_pace)} /km`;
   if (workout.target_hr_low != null && workout.target_hr_high != null) {
     return `HR ${workout.target_hr_low}–${workout.target_hr_high}`;
   }
@@ -95,7 +112,7 @@ export const STEP_KIND_LABELS: Record<StepKind, string> = {
 
 /** Target chip for a workout step: "4:45/km" or "148–158 bpm". */
 export function stepTargetLabel(step: WorkoutStep): string | null {
-  if (step.target_pace) return `${step.target_pace}/km`;
+  if (step.target_pace) return `${formatPaceBand(step.target_pace)}/km`;
   if (step.target_hr_low != null && step.target_hr_high != null) {
     return `${step.target_hr_low}–${step.target_hr_high} bpm`;
   }
@@ -170,7 +187,7 @@ function compactStep(step: WorkoutStep): string {
   const end = compactEnd(step);
   if (end) parts.push(end);
   if (step.target_pace) {
-    parts.push(`@ ${step.target_pace}`);
+    parts.push(`@ ${formatPaceBand(step.target_pace)}`);
   } else if (step.target_hr_low != null && step.target_hr_high != null) {
     parts.push(`@ ${step.target_hr_low}–${step.target_hr_high}bpm`);
   } else if (step.note) {

@@ -10,6 +10,7 @@ import {
   WORKOUT_EFFORT_LABEL,
   WORKOUT_LABELS,
   WORKOUT_PURPOSE,
+  formatPaceBand,
 } from "@/lib/workout";
 import { HrZoneBar } from "@/components/hr-zone-bar";
 import { coachFirstName, useCoach } from "@/components/coach-provider";
@@ -149,7 +150,7 @@ export default function PlanDayPage({ params }: { params: { date: string } }) {
   if (day.distance_km != null)
     tiles.push({ label: "Distance", value: String(day.distance_km), sub: "km" });
   if (day.target_pace) {
-    tiles.push({ label: "Target", value: day.target_pace, sub: "/km" });
+    tiles.push({ label: "Target", value: formatPaceBand(day.target_pace), sub: "/km" });
   } else if (day.target_hr_low != null && day.target_hr_high != null) {
     const hr =
       day.target_hr_low === day.target_hr_high

@@ -93,6 +93,33 @@ def test_intent_day_coerced_to_cross_train(db):
     assert day.distance_km is None
 
 
+def test_fully_timed_steps_overwrite_day_duration(db):
+    # The model wrote "30 min" over 28 min of steps; the steps are the workout,
+    # so the stored day duration is derived from them, repeats expanded.
+    steps = [
+        {"repeat": 1, "steps": [{"kind": "warmup", "duration_min": 5}]},
+        {"repeat": 2, "steps": [{"kind": "work", "duration_min": 7},
+                                {"kind": "recovery", "duration_min": 2}]},
+        {"repeat": 1, "steps": [{"kind": "cooldown", "duration_min": 5}]},
+    ]
+    day = _day_dict(TODAY, duration_min=30, steps=steps)
+    apply_plan_days(db, 1, [day], source="daily_job", summary="s")
+    assert db.get(PlanDay, (1, TODAY)).duration_min == 28
+    # Re-applying the identical plan compares against the derived value it
+    # produced - not a material change (that would clear pushed_at nightly).
+    assert apply_plan_days(db, 1, [day], source="daily_job", summary="s") == []
+
+
+def test_partially_timed_steps_keep_the_stated_duration(db):
+    # A distance-only step has no clock of its own, so the sum would undercount;
+    # the model's whole-workout estimate stands.
+    steps = [{"repeat": 1, "steps": [{"kind": "warmup", "duration_min": 10},
+                                     {"kind": "work", "distance_km": 8}]}]
+    apply_plan_days(db, 1, [_day_dict(TODAY, duration_min=55, steps=steps)],
+                    source="daily_job", summary="s")
+    assert db.get(PlanDay, (1, TODAY)).duration_min == 55
+
+
 def test_intent_day_allows_rest(db):
     db.add(DayIntent(user_id=1, date=TODAY, sport="hiking"))
     db.commit()

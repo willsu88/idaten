@@ -4,11 +4,14 @@
 import { describe, expect, it } from "vitest";
 import {
   compactStepsSummary,
+  formatPaceBand,
   formatStepDuration,
   formatTotalDuration,
   stepEndLabel,
+  stepTargetLabel,
   stepTerrainLabel,
   workoutBreakdown,
+  workoutTargetLabel,
 } from "./workout";
 import type { StepBlock, WorkoutStep } from "./types";
 
@@ -99,6 +102,41 @@ describe("stepTerrainLabel", () => {
   it("stays quiet for ordinary flat running", () => {
     expect(stepTerrainLabel(step())).toBeNull();
     expect(stepTerrainLabel(step({ terrain: "flat" }))).toBeNull();
+  });
+});
+
+// Stored bands are "slower-faster" (ADR 0020); readers scan a range low-to-high,
+// so every display renders faster-first — matching the execution-score table.
+describe("formatPaceBand", () => {
+  it("renders a stored slower-faster band faster-first", () => {
+    expect(formatPaceBand("9:29-8:05")).toBe("8:05–9:29");
+  });
+
+  it("leaves an already faster-first band in order", () => {
+    expect(formatPaceBand("6:50-7:05")).toBe("6:50–7:05");
+  });
+
+  it("passes single paces and malformed strings through", () => {
+    expect(formatPaceBand("5:30")).toBe("5:30");
+    expect(formatPaceBand("about 6:00")).toBe("about 6:00");
+  });
+});
+
+describe("target labels order pace bands faster-first", () => {
+  it("stepTargetLabel", () => {
+    expect(stepTargetLabel(step({ target_pace: "9:29-8:05" }))).toBe("8:05–9:29/km");
+  });
+
+  it("workoutTargetLabel", () => {
+    expect(
+      workoutTargetLabel({ target_pace: "9:29-8:05", target_hr_low: null, target_hr_high: null }),
+    ).toBe("@ 8:05–9:29 /km");
+  });
+
+  it("compactStepsSummary", () => {
+    expect(
+      compactStepsSummary([{ repeat: 1, steps: [step({ duration_min: 7, target_pace: "7:01-6:46" })] }]),
+    ).toBe("7' @ 6:46–7:01");
   });
 });
 
