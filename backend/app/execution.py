@@ -45,7 +45,20 @@ def _step_segment(hr_low, hr_high, pace, dur_min, dist_km, label,
     them); never score against one - widen it through the zone rule instead.
     """
     dur = float(dur_min) * 60 if dur_min else None
-    if hr_low and hr_high:
+    band = pace_band_mps(pace) if terrain != "uphill" else None
+    if band and hr_low and hr_high:
+        # Pre-ADR-0025 data: both axes on one step. The UI displays pace-first,
+        # so pace is the target the athlete was steering by - score that one.
+        # Never silent (the ADR 0020 lesson).
+        log.warning("step %r carries both a pace and an HR target - scoring the "
+                    "displayed pace band %r", label, pace)
+    if band:
+        # Scored against exactly the band push.py sent to the watch, so the
+        # score always judges what the athlete was actually shown.
+        axis, (low, high) = "pace", band
+        if not dur and dist_km:
+            dur = float(dist_km) * 1000 / ((low + high) / 2)
+    elif hr_low and hr_high:
         hr_low, hr_high = metrics.ensure_hr_band(hr_low, hr_high, zones, quality)
         axis, low, high = "hr", float(hr_low), float(hr_high)
         # A distance-prescribed HR step ("10 km in z2") has no prescribed clock
@@ -67,14 +80,7 @@ def _step_segment(hr_low, hr_high, pace, dur_min, dist_km, label,
                         "out of the execution score", pace)
         return None
     else:
-        # Scored against exactly the band push.py sent to the watch, so the
-        # score always judges what the athlete was actually shown.
-        band = pace_band_mps(pace)
-        if not band:
-            return None  # no.target step - nothing to score against
-        axis, (low, high) = "pace", band
-        if not dur and dist_km:
-            dur = float(dist_km) * 1000 / ((low + high) / 2)
+        return None  # no-target step - nothing to score against
     if not dur:
         return None
     return {"axis": axis, "low": low, "high": high, "duration_s": dur, "label": label}

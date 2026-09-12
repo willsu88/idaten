@@ -276,3 +276,36 @@ def test_idaten_segments_score_pace_range_work_steps(db, user):
     work = segs[1]
     assert work["axis"] == "pace" and work["duration_s"] == 360
     assert (work["low"], work["high"]) == metrics.pace_band_mps("6:50-7:05")
+
+
+def test_dual_target_step_is_scored_on_the_pace_it_displayed(db, user):
+    """A step carrying both axes (pre-ADR-0025 data) is scored on PACE - the
+    axis the UI displays - never on the HR band the athlete was never shown."""
+    day = PlanDay(user_id=user.id, date=TODAY, workout_type="tempo",
+                  title="Short tempo session", steps=[
+                      {"repeat": 1, "steps": [
+                          {"kind": "warmup", "duration_min": 5,
+                           "target_pace": "9:29-8:05",
+                           "target_hr_low": 138, "target_hr_high": 152},
+                      ]},
+                  ])
+    segs = execution._idaten_segments(day, ZONES)
+    assert len(segs) == 1
+    assert segs[0]["axis"] == "pace"
+    assert (segs[0]["low"], segs[0]["high"]) == metrics.pace_band_mps("9:29-8:05")
+
+
+def test_dual_target_uphill_step_stays_on_hr(db, user):
+    """Uphill is the standing exception (ADR 0021): its pace is the gradient,
+    so a dual-target uphill step keeps the HR axis."""
+    day = PlanDay(user_id=user.id, date=TODAY, workout_type="intervals",
+                  title="Hill reps", steps=[
+                      {"repeat": 1, "steps": [
+                          {"kind": "work", "duration_min": 2, "terrain": "uphill",
+                           "target_pace": "4:10",
+                           "target_hr_low": 161, "target_hr_high": 173},
+                      ]},
+                  ])
+    segs = execution._idaten_segments(day, ZONES)
+    assert len(segs) == 1 and segs[0]["axis"] == "hr"
+    assert (segs[0]["low"], segs[0]["high"]) == (161, 173)
