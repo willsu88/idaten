@@ -1201,6 +1201,10 @@ def generate_plan(db: Session, user_id: int, source: str = "daily_job") -> list[
         for v in dual_target_violations(days):
             log.warning("plan dual-target guard STILL violated (user %s): %s",
                         user_id, v)
+        # Same order as the chat path (and _drop_dual_targets' documented
+        # precondition): uphill steps resolve to HR first, so a dual-target
+        # uphill step never survives as pace-only (ADR 0021 + 0025).
+        days = [_drop_uphill_pace(d) for d in days]
         days = [_drop_dual_targets(d) for d in days]
     chronic = (snapshot.get("load_ramp") or {}).get("chronic_daily_load")
     for warning in check_week(days, snapshot["quality_budget"], chronic,
@@ -2151,6 +2155,16 @@ def _execution_context(db: Session, user_id: int, date: dt.date) -> dict | None:
     return out or None
 
 
+def _prescription_summary(prescription: dict | None) -> dict | None:
+    """The attempted prescription trimmed for the analysis prompt: identity and
+    targets, never internal bookkeeping (version ids)."""
+    if not prescription:
+        return None
+    return {k: prescription.get(k)
+            for k in ("title", "workout_type", "targets", "training_effect")
+            if prescription.get(k) is not None}
+
+
 def write_execution_analysis(db: Session, a: Activity) -> tuple[str, str]:
     """One LLM call: a persona-voiced, forward-looking narrative for an already-
     computed execution score. Returns (analysis_text, coach_style) — the caller
@@ -2169,6 +2183,9 @@ def write_execution_analysis(db: Session, a: Activity) -> tuple[str, str]:
         "execution_score": a.execution_score,
         "score_source": a.execution_score_source,
         "segments": a.execution_breakdown,
+        # ADR 0026: the prescription the run attempted - the only assignment
+        # context there is when the day was self-paced (no score, no segments).
+        "prescription": _prescription_summary(a.attempted_prescription),
         "rpe": a.rpe or a.garmin_rpe,
         "feel": a.feel,
         "context": _execution_context(db, a.user_id, a.date),

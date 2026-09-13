@@ -7,7 +7,7 @@ import type { Activity, GearSuggestion } from "@/lib/types";
 import { api, safe } from "@/lib/api";
 import { GearSuggestionBanner } from "@/components/gear-shoe-card";
 import { Card, CardContent } from "@/components/ui/card";
-import { ScoreBadge } from "@/components/execution-score";
+import { ScoreBadge, UnscoredBadge } from "@/components/execution-score";
 import { CoachNote } from "@/components/coach-note";
 import { personaForStyle } from "@/components/coach-provider";
 import { ActivityTypeIcon } from "@/components/activity-icon";
@@ -34,8 +34,11 @@ export function ResultCard({ activity }: { activity: Activity }) {
   }, [activity.id]);
 
   // Lazy, once: the Today load is the ONLY trigger for the analysis LLM call.
+  // Gated on the link, not the score (ADR 0026) - a self-paced run has no
+  // score and the narrative is the only feedback there is.
+  const linked = activity.execution_score != null || activity.attempted_prescription != null;
   React.useEffect(() => {
-    if (activity.execution_score == null || analysis) return;
+    if (!linked || analysis) return;
     let alive = true;
     setPending(true);
     safe(api.activityAnalysis(activity.id)).then((res) => {
@@ -87,9 +90,13 @@ export function ResultCard({ activity }: { activity: Activity }) {
           </div>
         )}
 
-        {activity.execution_score != null && (
+        {linked && (
           <div className="mt-4 border-t border-border pt-4">
-            <ScoreBadge score={activity.execution_score} source={activity.execution_score_source} />
+            {activity.execution_score != null ? (
+              <ScoreBadge score={activity.execution_score} source={activity.execution_score_source} />
+            ) : (
+              <UnscoredBadge prescription={activity.attempted_prescription} />
+            )}
             {analysis ? (
               <div className="mt-3">
                 <CoachNote

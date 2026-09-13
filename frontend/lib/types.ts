@@ -125,6 +125,23 @@ export interface WeekSummary {
   strength: { target: number; done: number } | null; // null = not opted in
 }
 
+/** The prescription a run attempted (ADR 0018/0026), frozen at attribution
+ * time - what "this run is linked to the plan" renders from. */
+export interface AttemptedPrescription {
+  source: "plan_day" | "garmin_coach";
+  plan_date?: string; // the linked day (may differ from the run's date)
+  title: string | null;
+  workout_type?: string;
+  targets?: {
+    hr_low: number | null;
+    hr_high: number | null;
+    pace: string | null;
+    duration_min: number | null;
+    distance_km: number | null;
+  };
+  steps?: StepBlock[] | null;
+}
+
 export interface Activity {
   id: number;
   date: string;
@@ -152,6 +169,10 @@ export interface Activity {
   execution_breakdown: ExecutionSegment[] | null;
   execution_analysis: string | null;
   execution_analysis_coach: string | null; // coach_style key that wrote the analysis
+  // ADR 0018 + 0026: the durable run-to-plan link - the prescription this run
+  // attempted, frozen at attribution time. Null = not linked; a linked
+  // self-paced day carries this with a null execution_score.
+  attempted_prescription: AttemptedPrescription | null;
   // ADR 0018: set when the run executed a different workout than the day's
   // (edited) plan - the score judges the workout actually run.
   plan_mismatch: { executed: string; planned: string; planned_source: string | null } | null;
@@ -348,7 +369,20 @@ export interface PendingEdit {
   current: PlanDay[];
   // Proposed strength sessions (the support lane) — null/absent for run edits.
   strength?: StrengthProposalSession[] | null;
+  // Proposed run-to-plan link (ADR 0026) — null/absent for plan edits.
+  link?: LinkProposal | null;
   status: "pending" | "accepted" | "dismissed" | "superseded";
+}
+
+/** A coach-proposed run-to-plan link awaiting approval (ADR 0026). */
+export interface LinkProposal {
+  activity_id: number;
+  activity_name: string;
+  activity_date: string;
+  plan_date: string;
+  day_title: string | null;
+  // The target day prescribes no targets: accepting completes it unscored.
+  self_paced: boolean;
 }
 
 export interface StrengthProposalSession {

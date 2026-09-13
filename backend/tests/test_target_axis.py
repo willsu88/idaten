@@ -3,7 +3,7 @@ clamp, and the scorer's pace-first precedence that matches what the UI shows.
 
 Born from a real session: easy steps carried both a pace band (which the app
 displayed) and an HR band (which the scorer silently graded against), so the
-athlete ran to a target she was never scored on.
+athlete ran to a target they were never scored on.
 """
 from __future__ import annotations
 

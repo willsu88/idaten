@@ -128,12 +128,19 @@ class Activity(Base):
     execution_score: Mapped[int | None] = mapped_column(Integer)
     execution_score_source: Mapped[str | None] = mapped_column(String)  # garmin | idaten
     execution_breakdown: Mapped[Any] = mapped_column(JSON, nullable=True)
-    # ADR 0018: the prescription the score judged, frozen at scoring time
-    # (identity + targets), and the executed-vs-planned divergence when the run
+    # ADR 0018 + ADR 0026: the prescription this run ATTEMPTED, frozen at
+    # attribution time (identity + targets). This is the durable link between a
+    # run and its plan day - set whenever attribution succeeds, whether or not
+    # a score could be computed (a self-paced zero-axis day links unscored).
+    # `plan_mismatch` is the executed-vs-planned divergence when the run
     # executed a workout that is not the current PlanDay (e.g. a chat edit was
     # never pushed and the athlete ran the watch's original coach workout).
-    # Null on activities scored before the ADR; consumers tolerate absence.
-    scored_prescription: Mapped[Any] = mapped_column(JSON, nullable=True)
+    # Null on activities attributed before the ADRs; consumers tolerate absence.
+    # none_as_null: severing a link assigns None, and that must store SQL NULL -
+    # the default JSON 'null' would still match is_not(None) SQL predicates,
+    # leaving a severed run rendered as linked.
+    attempted_prescription: Mapped[Any] = mapped_column(
+        JSON(none_as_null=True), nullable=True)
     plan_mismatch: Mapped[Any] = mapped_column(JSON, nullable=True)
     # Athlete's answer to "was this run an attempt at the planned workout?" when
     # auto-attribution was ambiguous. None = not asked/undecided, True = confirmed
@@ -387,6 +394,10 @@ class PendingEdit(Base):
     # Proposed strength sessions ({date, duration_min, focus, rationale} dicts);
     # nullable=True is required — Mapped[Any] JSON columns are NOT NULL by default.
     strength: Mapped[Any] = mapped_column(JSON, nullable=True)
+    # ADR 0026: a proposed activity-to-plan-day link ({activity_id, plan_date,
+    # activity_name, activity_date, day_title}); the accept applies the link
+    # through the same pipeline as the self-serve endpoint. Null for plan edits.
+    link: Mapped[Any] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String, default="pending")  # pending|accepted|dismissed|superseded
 
 

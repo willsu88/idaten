@@ -1,4 +1,4 @@
-import type { HrZones, PlanDay, ReadinessLevel, StepBlock, StepKind, WorkoutStep, WorkoutType } from "./types";
+import type { AttemptedPrescription, HrZones, PlanDay, ReadinessLevel, StepBlock, StepKind, WorkoutStep, WorkoutType } from "./types";
 import { formatDuration } from "./utils";
 
 export type ZoneKey = "z1" | "z2" | "z3" | "z4" | "z5";
@@ -355,3 +355,27 @@ export const READINESS_CLASSES: Record<
     label: "Prioritize recovery",
   },
 };
+
+/** A non-rest day with no target axis at all — no pace band, no HR band, no
+ * structured steps (ADR 0026): it links and completes when run, but there is
+ * nothing to score. One definition for every surface that flags it. */
+export function isSelfPacedDay(day: PlanDay): boolean {
+  return (
+    day.workout_type !== "rest" &&
+    !day.target_pace &&
+    !(day.target_hr_low && day.target_hr_high) &&
+    !(day.steps && day.steps.length > 0)
+  );
+}
+
+/** Same zero-axis test against a frozen attempted prescription (ADR 0026).
+ * Only our own plan-day stamps carry targets; anything else (a Garmin coach
+ * prescription, a pre-ADR stamp) is "unknown", never "self-paced". */
+export function isSelfPacedPrescription(p: AttemptedPrescription | null | undefined): boolean {
+  if (!p || p.source !== "plan_day" || !p.targets) return false;
+  return (
+    !p.targets.pace &&
+    !(p.targets.hr_low && p.targets.hr_high) &&
+    !(p.steps && p.steps.length > 0)
+  );
+}

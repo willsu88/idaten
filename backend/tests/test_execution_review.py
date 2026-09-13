@@ -97,9 +97,9 @@ def test_score_confirmed_against_coach_te_label(db, user):
     a = _run(db, user.id, 1, TODAY)  # HR 150, whole-run fallback vs z2 [144,161]
     from app.settings_store import put_garmin_hr_zones
     put_garmin_hr_zones(db, user.id, ZONES, TODAY.isoformat())
-    score, breakdown, hill = execution.score_confirmed(db, a, ZONES)
-    assert score == 100 and breakdown
-    assert hill is None  # a Garmin coach task carries no step terrain to check
+    res = execution.score_confirmed(db, a, ZONES)
+    assert res.score == 100 and res.breakdown and res.attributed
+    assert res.hill is None  # a Garmin coach task carries no step terrain to check
 
 
 def test_score_confirmed_against_idaten_planday(db, user):
@@ -108,9 +108,9 @@ def test_score_confirmed_against_idaten_planday(db, user):
                    target_hr_high=161))
     db.commit()
     a = _run(db, user.id, 1, TODAY)
-    score, _, hill = execution.score_confirmed(db, a, ZONES)
-    assert score == 100
-    assert hill is None  # the day prescribed no uphill work
+    res = execution.score_confirmed(db, a, ZONES)
+    assert res.score == 100
+    assert res.hill is None  # the day prescribed no uphill work
 
 
 def test_score_confirmed_distance_only_hr_day(db, user):
@@ -122,9 +122,9 @@ def test_score_confirmed_distance_only_hr_day(db, user):
                    target_hr_high=161))
     db.commit()
     a = _run(db, user.id, 1, TODAY)  # 5000 m in 1200 s, HR 150 throughout
-    score, breakdown, hill = execution.score_confirmed(db, a, ZONES)
-    assert score == 100 and breakdown
-    assert hill is None
+    res = execution.score_confirmed(db, a, ZONES)
+    assert res.score == 100 and res.breakdown
+    assert res.hill is None
 
 
 # --- Phase 3: endpoint ----------------------------------------------------

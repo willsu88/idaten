@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { Check } from "lucide-react";
-import type { Activity, ActivityDetail, ExecutionSegment } from "@/lib/types";
+import type { Activity, ActivityDetail, AttemptedPrescription, ExecutionSegment } from "@/lib/types";
+import { isSelfPacedPrescription } from "@/lib/workout";
 import { CoachNote } from "@/components/coach-note";
 import { MetricInfo } from "@/components/metric-info";
 import { personaForStyle } from "@/components/coach-provider";
@@ -133,8 +134,38 @@ export function ExecutionBreakdown({ segments }: { segments: ExecutionSegment[] 
   );
 }
 
-/** Full block: score + breakdown + (optional) analysis narrative. Renders
- * nothing if the run has no execution score. */
+/** Completed-without-a-score state for a linked run (ADR 0026). A genuinely
+ * self-paced day says so ("nothing to grade"); a targeted day that merely
+ * couldn't be scored (e.g. no HR data) must NOT be mislabeled self-paced. */
+export function UnscoredBadge({
+  prescription,
+}: {
+  prescription: AttemptedPrescription | null;
+}) {
+  const selfPaced = isSelfPacedPrescription(prescription);
+  const title = prescription?.title;
+  return (
+    <div className="flex items-center gap-2.5">
+      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-success/50 bg-success/10 text-success">
+        <Check className="h-5 w-5" strokeWidth={3} />
+      </span>
+      <div className="text-xs text-muted-foreground">
+        <div className="flex items-center gap-0.5 font-medium text-foreground">
+          Completed
+          <MetricInfo id="execution" />
+        </div>
+        <div>
+          {title ? `${title} — ` : ""}
+          {selfPaced ? "self-paced, nothing to grade" : "couldn't be scored"}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Full block: score (or the self-paced completed state) + breakdown +
+ * (optional) analysis narrative. Renders nothing if the run is not linked to
+ * a planned workout. */
 export function ExecutionScore({
   activity,
   analysis,
@@ -149,12 +180,16 @@ export function ExecutionScore({
   // whether the ground went up. Null on every run that prescribed no climbing.
   hillCheck?: ActivityDetail["hill_check"];
 }) {
-  if (activity.execution_score == null) return null;
+  if (activity.execution_score == null && !activity.attempted_prescription) return null;
   const text = analysis ?? activity.execution_analysis;
 
   return (
     <div className="space-y-3">
-      <ScoreBadge score={activity.execution_score} source={activity.execution_score_source} size="lg" />
+      {activity.execution_score != null ? (
+        <ScoreBadge score={activity.execution_score} source={activity.execution_score_source} size="lg" />
+      ) : (
+        <UnscoredBadge prescription={activity.attempted_prescription} />
+      )}
       {hillCheck && (
         <p
           className={cn(

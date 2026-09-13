@@ -205,6 +205,52 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "get_run_execution",
+            "description": (
+                "How recent runs matched the plan: execution score (null = not "
+                "scoreable, e.g. a self-paced day with no targets), the workout "
+                "each run attempted (the run-to-plan link), executed-vs-planned "
+                "mismatches, and each day's completed/planned status. Call this "
+                "when the athlete asks about a score, why a run did or didn't "
+                "count toward the plan, or before proposing link_activity."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "days": {"type": "integer", "description": "how many days back to look (default 14, max 92)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "link_activity",
+            "description": (
+                "Propose linking a run to a planned workout when the automatic "
+                "match missed it (run on a nearby day, or previously answered "
+                "'just a run'). The plan day must be the athlete's own, within "
+                "3 days of the run, not a rest day, not already completed. The "
+                "user sees a card and must accept before anything changes - "
+                "never claim the run was linked; say it awaits their approval. "
+                "On accept the run is scored against that day's targets (a "
+                "self-paced day with no targets completes unscored) and the "
+                "day is marked completed."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "activity_id": {"type": "integer", "description": "the run's activity id, from get_run_execution or get_training_data"},
+                    "plan_date": {"type": "string", "description": "YYYY-MM-DD of the plan day to link the run to"},
+                    "rationale": {"type": "string", "description": "One line: why this run is that workout"},
+                },
+                "required": ["activity_id", "plan_date"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "propose_strength_sessions",
             "description": (
                 "Propose strength-session placements for the next 7 days (the "
@@ -248,6 +294,7 @@ def edit_dict(e: PendingEdit) -> dict:
         "changes": e.changes,
         "current": e.current,
         "strength": e.strength,  # proposed strength sessions (null for run edits)
+        "link": e.link,  # proposed run-to-plan link (null for plan edits)
         "status": e.status,
     }
 
@@ -462,6 +509,87 @@ def dispatch(
                      "it as-is or adapted to their own zones. Do not claim it "
                      "is on their plan."),
         }), None
+
+    if name == "get_run_execution":
+        days_back = min(int(args.get("days") or 14), 92)
+        since = dt.date.today() - dt.timedelta(days=days_back)
+        runs = db.scalars(
+            select(Activity).where(Activity.user_id == user_id,
+                                   Activity.date >= since,
+                                   Activity.type.like("%run%"))
+            .order_by(Activity.date.desc())
+        ).all()
+        out = []
+        for a in runs:
+            p = a.attempted_prescription or {}
+            # The stamp's own date wins: a manual link may cross dates
+            # (ADR 0026), so the run's date is not authoritative.
+            day_date = (dt.date.fromisoformat(p["plan_date"])
+                        if p.get("plan_date") else a.date)
+            day = db.get(PlanDay, (user_id, day_date))
+            out.append({
+                "activity_id": a.id,
+                "date": a.date.isoformat(),
+                "name": a.name,
+                "distance_km": round((a.distance_m or 0) / 1000, 2),
+                "linked_to_plan": bool(p) or a.execution_score is not None,
+                "attempted_workout": p.get("title"),
+                "execution_score": a.execution_score,
+                "score_source": a.execution_score_source,
+                "plan_mismatch": a.plan_mismatch,
+                # None = never asked, False = athlete said "just a run"
+                "athlete_attribution_answer": a.execution_attributed,
+                "plan_day": ({"date": day.date.isoformat(), "title": day.title,
+                              "workout_type": day.workout_type,
+                              "status": day.status} if day else None),
+            })
+        return json.dumps({
+            "runs": out,
+            "note": ("linked_to_plan false on a day with a planned workout may "
+                     "warrant link_activity. A null score on a LINKED run means "
+                     "the day prescribed no targets (self-paced) - that is by "
+                     "design, not a failure."),
+        }), None
+
+    if name == "link_activity":
+        from .. import execution
+
+        try:
+            activity_id = int(args["activity_id"])
+            plan_date = dt.date.fromisoformat(args["plan_date"])
+        except (KeyError, TypeError, ValueError):
+            return json.dumps({"error": "link_activity needs an integer "
+                               "activity_id and a YYYY-MM-DD plan_date"}), None
+        a = db.get(Activity, activity_id)
+        if a is None or a.user_id != user_id:
+            return json.dumps({"error": f"no activity with id {activity_id}"}), None
+        day, reason = execution.linkable_day(db, a, plan_date)
+        if day is None:
+            return json.dumps({"error": reason}), None
+        # One pending proposal at a time, same as create_pending_edit.
+        for old in db.scalars(select(PendingEdit).where(
+                PendingEdit.user_id == user_id, PendingEdit.status == "pending")):
+            old.status = "superseded"
+        self_paced = execution.is_self_paced(day)
+        edit = PendingEdit(
+            user_id=user_id,
+            summary=f"Link {a.name or 'the run'} to {day.title or day.workout_type}",
+            rationale=str(args.get("rationale") or ""),
+            changes=[], current=[],
+            link={"activity_id": a.id, "activity_name": a.name,
+                  "activity_date": a.date.isoformat(),
+                  "plan_date": day.date.isoformat(),
+                  "day_title": day.title, "self_paced": self_paced},
+        )
+        db.add(edit)
+        db.commit()
+        payload = {"status": "proposed", "edit_id": edit.id,
+                   "note": "Awaiting user approval in the UI. Do not claim the run is linked."}
+        if self_paced:
+            payload["note"] += (" This day is self-paced (no targets): on accept "
+                                "it completes the day but produces no score - "
+                                "tell the user that plainly.")
+        return json.dumps(payload), edit
 
     if name == "propose_strength_sessions":
         from .. import support as support_mod

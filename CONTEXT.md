@@ -79,6 +79,20 @@ It is recorded beside the execution score, never inside it: the score measures e
 It follows the same attribution as the score - it is a claim about a run that executed the prescription, never about a free run that fell on the same date.
 Absent on any run whose plan prescribed no uphill work, which is almost all of them.
 
+### Attempted prescription
+The frozen record of which planned workout a run attempted (identity plus targets), stamped onto the activity at attribution time (ADR 0018, ADR 0026).
+It is the durable run-to-plan link: a run is "linked" exactly when this is stamped, whether or not a score could be computed, and every surface renders the association from it.
+A later plan edit never changes it.
+
+### Self-paced day
+A non-rest plan day that prescribes no target axis at all: no pace band, no HR band, no structured steps - typically distance or duration by feel, at the athlete's request.
+Legitimate by design (ADR 0026 extends ADR 0025's one-axis rule down to zero): when run it links and completes like any other day, but there is nothing to score, so its execution score is null forever.
+Never silently blank: the approval card flags it before the yes, and the UI shows "completed - self-paced" instead of an empty score.
+
+### Run-to-plan link
+The association between a completed run and the plan day it attempted, established by attribution (definitive evidence, an athlete's confirmation, or a manual link) and recorded as the attempted prescription plus the day's `completed` status.
+A manual link may cross dates within a small window - the run is scored against the linked day's own prescription (a first score, never a recompute).
+
 ### Running environment
 The athlete's own free-text description of what they have to run on ("only hill nearby is ~150m at 6%", "no track", "trails").
 A member setting the coach reads as prose; it is what stops a hill session being programmed for someone with no hill.

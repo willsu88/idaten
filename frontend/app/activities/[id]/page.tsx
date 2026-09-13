@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, MessageSquare, Watch } from "lucide-react";
 import type { ActivityDetail } from "@/lib/types";
 import { api } from "@/lib/api";
-import { WORKOUT_BADGE_CLASSES, WORKOUT_LABELS } from "@/lib/workout";
+import { WORKOUT_BADGE_CLASSES, WORKOUT_LABELS, isSelfPacedPrescription } from "@/lib/workout";
 import { ActivityTypeIcon } from "@/components/activity-icon";
 import {
   ActivityRouteSection,
@@ -13,6 +13,7 @@ import {
   useActivitySeries,
 } from "@/components/activity-series";
 import { GearSelectorCard } from "@/components/gear-selector";
+import { LinkWorkoutCard } from "@/components/link-workout-card";
 import { MetricInfo } from "@/components/metric-info";
 import { ZONE_COLORS } from "@/components/analytics-charts";
 import { RpeScale } from "@/components/rpe-card";
@@ -251,12 +252,16 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
           </div>
         )}
 
-        {detail.execution_score != null && (
+        {(detail.execution_score != null || detail.attempted_prescription) && (
           <Card>
             <CardHeader>
               <CardTitle>How you executed it</CardTitle>
               <CardDescription>
-                How closely you held the planned targets, segment by segment.
+                {detail.execution_score != null
+                  ? "How closely you held the planned targets, segment by segment."
+                  : isSelfPacedPrescription(detail.attempted_prescription)
+                    ? "This run counted toward your plan - it was self-paced, so there are no targets to grade."
+                    : "This run counted toward your plan, but it couldn't be scored."}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -264,6 +269,14 @@ export default function ActivityDetailPage({ params }: { params: { id: string } 
             </CardContent>
           </Card>
         )}
+
+        {/* Manual run-to-plan link (ADR 0026): only for an unlinked run — the
+            component fetches candidates and renders nothing when linked. */}
+        {detail.type.includes("run") &&
+          detail.execution_score == null &&
+          !detail.attempted_prescription && (
+            <LinkWorkoutCard activityId={detail.id} onLinked={load} />
+          )}
 
         <ActivitySeriesSection data={series.data} loading={series.loading} error={series.error} />
 

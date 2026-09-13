@@ -323,6 +323,21 @@ export const api = {
       { method: "POST", body: JSON.stringify({ attempted }) },
     ),
 
+  // Plan days a run may be manually linked to (ADR 0026): ±3 days, non-rest,
+  // not already completed.
+  linkCandidates: (id: number) =>
+    request<{ linked: boolean; candidates: PlanDay[] }>(
+      `/api/activities/${id}/link-candidates`,
+    ),
+
+  // Manually link a run to a plan day: scores it against that day's targets
+  // (a self-paced day links unscored) and marks the day completed.
+  linkActivity: (id: number, planDate: string) =>
+    request<{ ok: true; execution_score: number | null; linked_date: string }>(
+      `/api/activities/${id}/link`,
+      { method: "POST", body: JSON.stringify({ plan_date: planDate }) },
+    ),
+
   // --- gear (shoes) ---
   gear: () => request<GearItem[]>("/api/gear"),
 

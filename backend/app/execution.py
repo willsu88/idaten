@@ -22,6 +22,7 @@ label + the athlete's Garmin HR zones.
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 from typing import NamedTuple
 
@@ -207,6 +208,28 @@ def hill_check(day: PlanDay | None, splits) -> dict | None:
     }
 
 
+def unlink_day(db: Session, a: Activity) -> None:
+    """Revert the day this run's CURRENT stamp completed, when the run is being
+    severed or relinked elsewhere (ADR 0026). Without this, a relink would
+    leave the old day 'completed' forever with no run attached - and
+    self-locked, since manual links refuse completed targets. The day is left
+    alone when a sibling run still covers it."""
+    p = a.attempted_prescription or {}
+    date = p.get("plan_date")
+    day_date = dt.date.fromisoformat(date) if date else a.date
+    day = db.get(PlanDay, (a.user_id, day_date))
+    if day is None or day.status != "completed":
+        return
+    sibling = db.scalar(select(Activity).where(
+        Activity.user_id == a.user_id, Activity.date == day.date,
+        Activity.id != a.id,
+        or_(Activity.execution_score.is_not(None),
+            Activity.attempted_prescription.is_not(None))))
+    if sibling is None:
+        day.status = "planned"
+        db.add(day)
+
+
 def mark_day_completed(db: Session, user_id: int, date) -> None:
     """Flip a matched plan day to 'completed' so the daily review, materialize,
     and revert-to-Garmin all leave it untouched (and the Week can show it done).
@@ -219,7 +242,7 @@ def mark_day_completed(db: Session, user_id: int, date) -> None:
 
 class ScoreResult(NamedTuple):
     """score_run's verdict plus its ADR 0018 provenance: the prescription the
-    score judged (frozen onto the activity by the caller) and the executed-vs-
+    run attempted (frozen onto the activity by the caller) and the executed-vs-
     planned divergence when the run didn't execute the current PlanDay."""
 
     score: int | None = None
@@ -231,6 +254,11 @@ class ScoreResult(NamedTuple):
     # OUR plan day (the only kind that carries step terrain) and the run
     # actually executed it. Null everywhere else.
     hill: dict | None = None
+    # ADR 0026: attribution succeeded - the run WAS an attempt at a planned
+    # workout, whether or not a score could be computed. This, not the score,
+    # is what links the run to its day and completes the day: a self-paced
+    # zero-axis prescription is unscoreable by design but still done.
+    attributed: bool = False
 
 
 NOT_SCORED = ScoreResult()
@@ -270,6 +298,9 @@ def _executed_coach_workout(db: Session, a: Activity) -> dict | None:
 
 def _plan_day_prescription(day: PlanDay) -> dict:
     return {"source": "plan_day", "version_id": day.version_id,
+            # The linked day's own date - a manual link may cross dates
+            # (ADR 0026), so the activity's date is not authoritative.
+            "plan_date": day.date.isoformat(),
             "title": day.title, "workout_type": day.workout_type,
             "targets": {"hr_low": day.target_hr_low, "hr_high": day.target_hr_high,
                         "pace": day.target_pace, "duration_min": day.duration_min,
@@ -353,16 +384,29 @@ def score_run(db: Session, a: Activity, full: dict | None,
         # watch score judged Idaten's own workout even on a coach-tagged run.
         prescription = (_plan_day_prescription(day) if is_idaten_pushed
                         else _coach_prescription(executed, a, te))
-        return ScoreResult(int(gscore), "garmin", None, prescription, mismatch, hill)
+        return ScoreResult(int(gscore), "garmin", None, prescription, mismatch,
+                           hill, attributed=True)
     segs = (_idaten_segments(day, zones, _run_speed(a)) if prefer_idaten
             else _coach_segments(a.splits, te, zones, a))
     out = execution_score(a.series, segs)
-    if not out:
-        return NOT_SCORED
     prescription = (_plan_day_prescription(day) if prefer_idaten
                     else _coach_prescription(executed, a, te))
+    if not out:
+        # ADR 0026: our own day (pushed or Idaten-owned) is definitive
+        # attribution evidence, so the link and the day's completion survive
+        # an unscoreable prescription - a self-paced zero-axis day is the
+        # designed case. Never silent (the ADR 0020 lesson).
+        if is_idaten_pushed or is_idaten_plan:
+            log.info("run %s attributed to %s's plan day %s but nothing is "
+                     "scoreable (%s) - linked and completed unscored",
+                     a.id, a.user_id, a.date,
+                     "no target axis" if prefer_idaten and not segs
+                     else "no scoreable segments")
+            return ScoreResult(None, None, None, prescription, mismatch,
+                               hill, attributed=True)
+        return NOT_SCORED  # coach-tagged only: too weak to link unscored
     return ScoreResult(out["score"], "idaten", out["breakdown"],
-                       prescription, mismatch, hill)
+                       prescription, mismatch, hill, attributed=True)
 
 
 # --- Tier-3: the ambiguous middle -----------------------------------------
@@ -396,7 +440,8 @@ def prompt_label(db: Session, a: Activity) -> str | None:
     eligible for the attribution prompt (already scored / already decided / no
     planned workout that day / another run that day already covers it)."""
     if "run" not in (a.type or "") or a.execution_score is not None \
-            or a.execution_attributed is not None:
+            or a.execution_attributed is not None \
+            or a.attempted_prescription is not None:
         return None
     pw = _planned_workout(db, a.user_id, a.date)
     if not pw:
@@ -404,14 +449,78 @@ def prompt_label(db: Session, a: Activity) -> str | None:
     sibling = db.scalar(select(Activity).where(
         Activity.user_id == a.user_id, Activity.date == a.date, Activity.id != a.id,
         or_(Activity.execution_score.is_not(None),
+            Activity.attempted_prescription.is_not(None),
             Activity.execution_attributed.is_(True))))
     return None if sibling else pw["label"]
 
 
-def score_confirmed(db: Session, a: Activity,
-                    zones: dict | None) -> tuple[int | None, list | None, dict | None]:
+def is_self_paced(day: PlanDay) -> bool:
+    """A day that prescribes no target axis at all (no pace, no HR band, no
+    steps) - legitimate by design (ADR 0026 extends ADR 0025 to zero axes):
+    it links and completes when run, but there is nothing to score."""
+    return not (day.target_pace
+                or (day.target_hr_low and day.target_hr_high)
+                or day.steps)
+
+
+# How far (in days, either direction) a manual link may reach from the run's
+# own date. Wide enough for "ran Tuesday's workout on Wednesday" and a weekend
+# swap; narrow enough that a link can't rewrite distant history into nonsense.
+LINK_WINDOW_DAYS = 3
+
+
+def link_candidates(db: Session, a: Activity) -> list[PlanDay]:
+    """Plan days this run may be manually linked to (ADR 0026): the athlete's
+    own days within the window, non-rest, not already completed."""
+    lo = a.date - dt.timedelta(days=LINK_WINDOW_DAYS)
+    hi = a.date + dt.timedelta(days=LINK_WINDOW_DAYS)
+    return db.scalars(
+        select(PlanDay).where(PlanDay.user_id == a.user_id,
+                              PlanDay.date >= lo, PlanDay.date <= hi,
+                              PlanDay.workout_type != "rest",
+                              PlanDay.status != "completed")
+        .order_by(PlanDay.date)).all()
+
+
+def linkable_day(db: Session, a: Activity,
+                 plan_date: dt.date) -> tuple[PlanDay | None, str | None]:
+    """Resolve + validate a manual link target. Returns (day, None) or
+    (None, reason) - one place, shared by the endpoint and the chat tool."""
+    if "run" not in (a.type or ""):
+        return None, "only runs can be linked to a planned workout"
+    day = db.get(PlanDay, (a.user_id, plan_date))
+    if day is None:
+        return None, f"no plan day on {plan_date.isoformat()}"
+    if day.workout_type == "rest":
+        return None, "a rest day has no workout to link to"
+    if day.status == "completed":
+        return None, f"the {plan_date.isoformat()} workout is already completed"
+    if abs((plan_date - a.date).days) > LINK_WINDOW_DAYS:
+        return None, (f"plan day is more than {LINK_WINDOW_DAYS} days from the "
+                      "run - too far to link")
+    return day, None
+
+
+def score_linked(db: Session, a: Activity, day: PlanDay,
+                 zones: dict | None) -> ScoreResult:
+    """Score + stamp material for a run explicitly linked to OUR plan day (an
+    athlete confirmation or a manual link). The link itself IS the attribution,
+    so the result is always attributed - a zero-axis day links unscored."""
+    segs = _idaten_segments(day, zones, _run_speed(a))
+    out = execution_score(a.series, segs)
+    if not out:
+        log.info("run %s linked to %s's plan day %s but nothing is scoreable "
+                 "- linked and completed unscored", a.id, day.user_id, day.date)
+    return ScoreResult(out["score"] if out else None,
+                       "idaten" if out else None,
+                       out["breakdown"] if out else None,
+                       _plan_day_prescription(day), None,
+                       hill_check(day, a.splits), attributed=True)
+
+
+def score_confirmed(db: Session, a: Activity, zones: dict | None) -> ScoreResult:
     """Score a run the athlete confirmed WAS an attempt at that day's planned
-    workout. Returns (score, breakdown, hill_check).
+    workout.
 
     The athlete's Yes IS the attribution here, so the terrain check applies on
     the same terms as the score - but only to our own plan day, since a Garmin
@@ -419,12 +528,13 @@ def score_confirmed(db: Session, a: Activity,
     """
     pw = _planned_workout(db, a.user_id, a.date)
     if not pw:
-        return None, None, None
-    is_idaten = pw["source"] == "idaten"
-    segs = (_idaten_segments(pw["day"], zones, _run_speed(a)) if is_idaten
-            else _coach_segments(a.splits, pw.get("te"), zones, a))
-    out = execution_score(a.series, segs)
-    if not out:
-        return None, None, None
-    hill = hill_check(pw["day"], a.splits) if is_idaten else None
-    return out["score"], out["breakdown"], hill
+        return NOT_SCORED
+    if pw["source"] == "idaten":
+        return score_linked(db, a, pw["day"], zones)
+    out = execution_score(a.series, _coach_segments(a.splits, pw.get("te"), zones, a))
+    prescription = {"source": "garmin_coach", "title": pw["label"],
+                    "training_effect": pw.get("te")}
+    return ScoreResult(out["score"] if out else None,
+                       "idaten" if out else None,
+                       out["breakdown"] if out else None,
+                       prescription, None, None, attributed=True)

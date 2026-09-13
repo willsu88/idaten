@@ -28,3 +28,4 @@ Each records the context, the options weighed, and why the chosen one won - so t
 - [0023](0023-sleep-scalars-are-columns-detail-is-raw.md) - Sleep data queried across days becomes daily_health columns; the per-night payload is archived verbatim
 - [0024](0024-trends-is-tiered-status-colors-are-semantic.md) - Trends is tiered (tiles, hero charts, disclosure) and green/amber/red carry verdicts only
 - [0025](0025-one-target-axis-per-step.md) - A target carries exactly one axis, and every reader resolves pace before HR
+- [0026](0026-attribution-links-and-completes.md) - Attribution links a run to its plan day and completes it; a score is optional

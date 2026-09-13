@@ -4,14 +4,22 @@ import * as React from "react";
 import { ArrowRight, Check, GitBranch, History, X } from "lucide-react";
 import type { PendingEdit, PlanDay } from "@/lib/types";
 import { api, ApiError, safe } from "@/lib/api";
-import { compactStepsSummary, WORKOUT_BADGE_CLASSES, WORKOUT_LABELS, workoutTargetLabel } from "@/lib/workout";
+import { compactStepsSummary, isSelfPacedDay, WORKOUT_BADGE_CLASSES, WORKOUT_LABELS, workoutTargetLabel } from "@/lib/workout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
 import { cn, formatDay, formatDuration } from "@/lib/utils";
 
-function DaySummary({ day, muted }: { day: PlanDay | null; muted?: boolean }) {
+function DaySummary({
+  day,
+  muted,
+  flagSelfPaced,
+}: {
+  day: PlanDay | null;
+  muted?: boolean;
+  flagSelfPaced?: boolean;
+}) {
   if (!day) {
     return <p className="text-sm italic text-muted-foreground">—</p>;
   }
@@ -38,6 +46,42 @@ function DaySummary({ day, muted }: { day: PlanDay | null; muted?: boolean }) {
           {compactStepsSummary(day.steps)}
         </p>
       )}
+      {flagSelfPaced && isSelfPacedDay(day) && (
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Self-paced - will complete when run, but won&apos;t be scored.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** A proposed run-to-plan link (ADR 0026): run on the left, the workout it
+ * counts as on the right - same diff shape as a plan edit. */
+function LinkProposal({ edit }: { edit: PendingEdit }) {
+  const link = edit.link;
+  if (!link) return null;
+  return (
+    <div className="rounded-xl border border-border bg-background/50 p-3">
+      <div className="grid items-start gap-3 sm:grid-cols-[1fr_auto_1fr]">
+        <div>
+          <p className="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            {formatDay(link.activity_date)}
+          </p>
+          <p className="text-sm font-medium">{link.activity_name || "Run"}</p>
+        </div>
+        <ArrowRight className="mt-1 hidden h-4 w-4 text-muted-foreground sm:block" />
+        <div>
+          <p className="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            {formatDay(link.plan_date)}
+          </p>
+          <p className="text-sm font-medium">{link.day_title || "Planned workout"}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {link.self_paced
+              ? "Self-paced - completes the day, no score."
+              : "Scored against this day's targets; the day is marked done."}
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -82,7 +126,7 @@ function EditDiff({ edit }: { edit: PendingEdit }) {
             <div className="grid items-start gap-3 sm:grid-cols-[1fr_auto_1fr]">
               <DaySummary day={current} muted />
               <ArrowRight className="mt-1 hidden h-4 w-4 text-muted-foreground sm:block" />
-              <DaySummary day={proposed} />
+              <DaySummary day={proposed} flagSelfPaced />
             </div>
           </div>
         );
@@ -156,7 +200,13 @@ export function EditProposalCard({
       else await api.dismissEdit(edit.id);
       const status = action === "accept" ? "accepted" : "dismissed";
       setLocalResolved(status);
-      toast(action === "accept" ? "Plan updated" : "Proposal dismissed");
+      toast(
+        action === "accept"
+          ? edit.link
+            ? "Run linked"
+            : "Plan updated"
+          : "Proposal dismissed",
+      );
       onResolved?.(status);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
@@ -185,7 +235,11 @@ export function EditProposalCard({
         <div className="flex items-center gap-2 text-accent">
           <GitBranch className="h-4 w-4" />
           <span className="text-xs font-semibold uppercase tracking-wider">
-            {edit.strength?.length ? "Proposed strength sessions" : "Proposed plan change"}
+            {edit.link
+              ? "Proposed run link"
+              : edit.strength?.length
+                ? "Proposed strength sessions"
+                : "Proposed plan change"}
           </span>
         </div>
         <CardTitle className="text-base">{edit.summary}</CardTitle>
@@ -194,6 +248,7 @@ export function EditProposalCard({
       <CardContent>
         <EditDiff edit={edit} />
         <StrengthProposal edit={edit} />
+        <LinkProposal edit={edit} />
         {!resolved && (
           <p className="mt-3 text-xs text-muted-foreground">
             Nothing changes until you accept - this is only a proposal.

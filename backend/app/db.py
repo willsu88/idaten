@@ -36,8 +36,31 @@ def init_db() -> None:
     from . import models  # noqa: F401  (register tables)
 
     Base.metadata.create_all(engine)
+    _migrate_renames()
     _auto_migrate()
     _migrate_multiuser()
+
+
+# Column renames, applied before _auto_migrate so the add-missing-columns pass
+# never creates an empty column beside the data it was meant to carry.
+_RENAMES = [
+    # ADR 0026: the frozen prescription links a run to its plan day whether or
+    # not it was scoreable, so "scored_" overstated what the column records.
+    ("activities", "scored_prescription", "attempted_prescription"),
+]
+
+
+def _migrate_renames() -> None:
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    with engine.begin() as conn:
+        for table, old, new in _RENAMES:
+            cols = {c["name"] for c in inspector.get_columns(table)}
+            if old in cols and new not in cols:
+                conn.execute(text(
+                    f'ALTER TABLE "{table}" RENAME COLUMN "{old}" TO "{new}"'
+                ))
 
 
 def _auto_migrate() -> None:

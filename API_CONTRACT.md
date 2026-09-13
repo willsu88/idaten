@@ -1907,3 +1907,38 @@ New endpoints:
 - New `/sleep` page: last-night hero (score + hypnogram + stage bars against optimal bands), score-component breakdown, sleep need vs actual with adjustment reasons, overnight HRV / heart-rate / body-battery curves, naps listed with Garmin's feedback, and 30/90d trends (duration vs need, score, bedtime/wake consistency).
 - The SLEEP stat tile on the readiness card links to `/sleep`; a sidebar entry appears under More.
 - Today renders a compact "Last night" card under the readiness card (duration, score, proportional stage bar, need %, naps), fed by `GET /api/sleep/{today}` and hidden until the morning sync has archived the night - render-only, no wire-shape change.
+
+## v1.44 - attribution links and completes; manual run-to-plan links (ADR 0026)
+
+A run is linked to its plan day by attribution, not by scoring.
+The frozen prescription is renamed and now stamps on every attributed run, scored or not; a self-paced (zero-target) day completes unscored.
+
+Wire changes:
+
+- Activity payloads (`/api/activities/*`, Today's `completed_workout`) rename `scored_prescription` -> `attempted_prescription` and now include it everywhere `_activity_dict` is served.
+  Non-null = the run is linked to the plan; it may carry a null `execution_score` (self-paced day).
+  The object gains `plan_date` (the linked day's own date - a manual link may cross dates).
+- Today's `completed_workout` now appears for any LINKED run today, not only a scored one.
+  Render the "completed - self-paced, nothing to grade" state when `execution_score` is null.
+- `POST /api/activities/{id}/analysis` gates on the link (stamped prescription or score), not the score.
+  400 detail changed from "activity has no execution score" to "activity is not linked to a planned workout".
+- `POST /api/activities/{id}/attribution` with `{attempted: false}` now also clears `attempted_prescription` and `hill_check` (severs the link).
+
+New endpoints:
+
+- `GET /api/activities/{id}/link-candidates` -> `{ linked: bool, candidates: PlanDay[] }` - the athlete's own plan days within 3 days of the run, non-rest, not already completed.
+- `POST /api/activities/{id}/link` body `{ plan_date: "YYYY-MM-DD" }` -> `{ ok, execution_score, linked_date }`.
+  Full pipeline against that day's prescription: scored when it has a target axis, linked-unscored when it doesn't; that day (not the run's date) is marked completed; overrides an earlier "just a run" answer.
+  400 with a reason when the day is rest/completed/missing/out of window.
+
+Pending edits:
+
+- `PendingEdit` gains `link` (null for plan edits): `{ activity_id, activity_name, activity_date, plan_date, day_title, self_paced }`.
+  Proposed by the coach's `link_activity` tool; `POST /api/edits/{id}/accept` applies it through the same pipeline, revalidating first (409 when it no longer applies).
+  `self_paced: true` means accepting completes the day but produces no score - the card must say so before the accept.
+
+### UI
+
+- Activity detail: the execution card renders for any linked run (self-paced state when unscored); an unlinked run shows a "Link to a planned workout" card listing candidates.
+- Today's result card: self-paced completed state; the lazy analysis call fires for linked runs, scored or not.
+- Edit proposal card: renders link proposals (run -> workout it counts as) and flags self-paced days in plan-edit diffs ("will complete when run, but won't be scored").

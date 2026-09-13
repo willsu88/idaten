@@ -15,7 +15,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from . import (chat_quota, crypto, execution, feedback as feedback_mod,
@@ -386,6 +386,10 @@ def _activity_dict(a: Activity) -> dict:
         "execution_breakdown": a.execution_breakdown,
         "execution_analysis": a.execution_analysis,
         "execution_analysis_coach": a.execution_analysis_coach,  # persona that wrote it
+        # ADR 0018 + 0026: the durable run-to-plan link - the prescription this
+        # run attempted, frozen at attribution time (null = not linked; a
+        # linked self-paced day carries this with a null score).
+        "attempted_prescription": a.attempted_prescription,
         # ADR 0018: set when the run executed a different workout than the
         # day's (edited) plan - {executed, planned, planned_source}.
         "plan_mismatch": a.plan_mismatch,
@@ -474,20 +478,22 @@ def dashboard_today(db: Session = Depends(get_db), user: User = Depends(current_
         if label:
             attribution = {"activity_id": latest_run.id, "workout_label": label}
 
-    # Today's completed run, once scored (attributed to the plan): the plan card
-    # gives way to this result card. Its analysis may still be null → the client
-    # fires the one lazy LLM call on load.
-    todays_scored = db.scalars(
+    # Today's completed run, once linked to the plan (ADR 0026: the stamped
+    # prescription is the link; the score check covers pre-0018 history): the
+    # plan card gives way to this result card. Its analysis may still be null
+    # → the client fires the one lazy LLM call on load.
+    todays_linked = db.scalars(
         select(Activity).where(Activity.user_id == user.id, Activity.date == today,
                                Activity.type.like("%run%"),
-                               Activity.execution_score.is_not(None))
+                               or_(Activity.execution_score.is_not(None),
+                                   Activity.attempted_prescription.is_not(None)))
         .order_by(Activity.id.desc()).limit(1)
     ).first()
     completed = None
-    if todays_scored:
-        completed = {**_activity_dict(todays_scored),
+    if todays_linked:
+        completed = {**_activity_dict(todays_linked),
                      "analysis_feedback": feedback_mod.feedback_state(
-                         db, user.id, "execution_analysis", todays_scored.id)}
+                         db, user.id, "execution_analysis", todays_linked.id)}
 
     # Today's non-run sessions (strength, yoga, cycling, walks…). Their load
     # already counts toward CTL/ATL/ramp; this makes them *visible* so a
@@ -1297,9 +1303,6 @@ def activity_detail(activity_id: int, db: Session = Depends(get_db),
         "elevation_gain_m": a.elevation_gain_m,
         "start_time_local": raw.get("startTimeLocal"),
         "plan_day": plan_day_dict(plan) if plan else None,
-        # ADR 0018: what the execution score judged, frozen at scoring time -
-        # a later plan edit never changes it (null on pre-0018 activities).
-        "scored_prescription": a.scored_prescription,
         # Terrain verification for a hill session (null for every other run).
         "hill_check": a.hill_check,
         "analysis_feedback": feedback_mod.feedback_state(
@@ -1363,20 +1366,89 @@ def attribute_activity(activity_id: int, body: AttributionBody,
     a = _own_activity(db, user.id, activity_id)
     a.execution_attributed = body.attempted
     if body.attempted:
-        score, breakdown, hill = execution.score_confirmed(
-            db, a, settings_store.hr_zones(db, user.id))
-        a.execution_score = score
-        a.execution_score_source = "idaten" if score is not None else None
-        a.execution_breakdown = breakdown
-        a.hill_check = hill
-        if score is not None:
-            execution.mark_day_completed(db, a.user_id, a.date)
+        # Already linked (e.g. scored via another tab while the prompt was
+        # still on screen): keep the existing verdict rather than letting a
+        # re-answer wipe a score with a NOT_SCORED recompute.
+        if not _is_linked(a):
+            res = execution.score_confirmed(db, a, settings_store.hr_zones(db, user.id))
+            _apply_link_result(db, a, res)
     else:
+        # "Just a run" severs the link (ADR 0026): revert the day the stamp
+        # completed (unless a sibling run covers it), then clear the stamp -
+        # the prescription is what every surface renders the association from.
+        execution.unlink_day(db, a)
         a.execution_score = None
         a.execution_score_source = None
         a.execution_breakdown = None
+        a.attempted_prescription = None
+        a.hill_check = None
     db.commit()
     return {"ok": True, "execution_score": a.execution_score}
+
+
+def _apply_link_result(db: Session, a: Activity, res) -> None:
+    """Stamp a link/score verdict onto the activity and complete the day.
+
+    ADR 0026: attribution (res.attributed), not the score, is what links and
+    completes - the stamped prescription is the durable link every surface
+    renders from, and a zero-axis self-paced day stamps with a null score."""
+    a.execution_score = res.score
+    a.execution_score_source = res.source
+    a.execution_breakdown = res.breakdown
+    a.hill_check = res.hill
+    if res.prescription is not None:
+        # A relink moves the stamp to another day: revert the day the OLD
+        # stamp completed first, or it stays done forever with no run.
+        old = a.attempted_prescription or {}
+        old_date = old.get("plan_date") or a.date.isoformat()
+        new_date = res.prescription.get("plan_date") or a.date.isoformat()
+        if a.attempted_prescription is not None and old_date != new_date:
+            execution.unlink_day(db, a)
+        a.attempted_prescription = res.prescription
+    if res.attributed:
+        date = res.prescription.get("plan_date") if res.prescription else None
+        day_date = dt.date.fromisoformat(date) if date else a.date
+        execution.mark_day_completed(db, a.user_id, day_date)
+
+
+def _is_linked(a: Activity) -> bool:
+    """Is this run attributed to a planned workout? The stamped prescription is
+    the durable link (ADR 0026); the score check covers pre-ADR-0018 history."""
+    return a.attempted_prescription is not None or a.execution_score is not None
+
+
+@router.get("/activities/{activity_id}/link-candidates")
+def activity_link_candidates(activity_id: int, db: Session = Depends(get_db),
+                             user: User = Depends(current_user)):
+    """Plan days this run may be manually linked to (ADR 0026): the athlete's
+    own days within ±3 days, non-rest, not already completed."""
+    a = _own_activity(db, user.id, activity_id)
+    days = execution.link_candidates(db, a) if "run" in (a.type or "") else []
+    return {"linked": _is_linked(a),
+            "candidates": [plan_day_dict(d) for d in days]}
+
+
+class LinkBody(BaseModel):
+    plan_date: str  # YYYY-MM-DD of the plan day to link this run to
+
+
+@router.post("/activities/{activity_id}/link")
+def link_activity(activity_id: int, body: LinkBody, db: Session = Depends(get_db),
+                  user: User = Depends(current_user)):
+    """Manually link a run to a plan day (ADR 0026): full pipeline against that
+    day's prescription - scored when it has a target axis, linked-unscored when
+    it doesn't - and that day is marked completed. Also overrides an earlier
+    'just a run' answer to the attribution prompt."""
+    a = _own_activity(db, user.id, activity_id)
+    day, reason = execution.linkable_day(db, a, _parse_date(body.plan_date, "plan_date"))
+    if day is None:
+        raise HTTPException(400, reason)
+    res = execution.score_linked(db, a, day, settings_store.hr_zones(db, user.id))
+    a.execution_attributed = True  # the link is the athlete's explicit Yes
+    _apply_link_result(db, a, res)
+    db.commit()
+    return {"ok": True, "execution_score": a.execution_score,
+            "linked_date": day.date.isoformat()}
 
 
 # The LLM analysis is generated lazily and ONLY for a recent run — never for old
@@ -1390,8 +1462,10 @@ def activity_analysis(activity_id: int, db: Session = Depends(get_db),
     """Generate (once) and return the execution-analysis narrative for a recent
     scored run. Idempotent: a cached analysis is returned without an LLM call."""
     a = _own_activity(db, user.id, activity_id)
-    if a.execution_score is None:
-        raise HTTPException(400, "activity has no execution score")
+    # ADR 0026: attribution, not the score, gates the analysis - a self-paced
+    # (zero-axis) day has no score, and the narrative is the only feedback.
+    if not _is_linked(a):
+        raise HTTPException(400, "activity is not linked to a planned workout")
     if a.execution_analysis is None:
         if a.date < dt.date.today() - dt.timedelta(days=ANALYSIS_MAX_AGE_DAYS):
             raise HTTPException(400, "analysis is only generated for recent runs")
@@ -1978,6 +2052,23 @@ def _own_pending_edit(db: Session, user_id: int, edit_id: int) -> PendingEdit:
 def accept_edit(edit_id: int, db: Session = Depends(get_db),
                 user: User = Depends(current_user)):
     edit = _own_pending_edit(db, user.id, edit_id)
+    if edit.link:
+        # A proposed run-to-plan link (ADR 0026): the accept applies it through
+        # the same pipeline as the self-serve endpoint. Revalidated here - the
+        # day may have completed (or vanished) since the proposal was made.
+        a = db.get(Activity, edit.link["activity_id"])
+        if a is None or a.user_id != user.id:
+            raise HTTPException(409, "That run no longer exists.")
+        day, reason = execution.linkable_day(
+            db, a, dt.date.fromisoformat(edit.link["plan_date"]))
+        if day is None:
+            raise HTTPException(409, f"This link can no longer be applied: {reason}.")
+        res = execution.score_linked(db, a, day, settings_store.hr_zones(db, user.id))
+        a.execution_attributed = True
+        _apply_link_result(db, a, res)
+        edit.status = "accepted"
+        db.commit()
+        return {"ok": True}
     # The approval is the authority for day intents too: the athlete just saw a
     # run on this day in the diff and said yes, which supersedes any standing
     # other-sport reservation. Without this, apply_plan_days' intent guard
